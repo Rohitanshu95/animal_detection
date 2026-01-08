@@ -404,6 +404,94 @@ async def bulk_upload(file: UploadFile = File(...), use_ai: bool = Query(False))
     }
 
 
+# Excel Upload Endpoints
+@app.post("/excel/parse", tags=["Excel Upload"])
+async def parse_excel(file: UploadFile = File(...)):
+    """
+    Parse Excel file and extract incidents
+    """
+    try:
+        from ai.excel_agent import parse_excel_file, validate_incidents
+        
+        # Read file content
+        content = await file.read()
+        
+        # Parse Excel
+        result = parse_excel_file(content)
+        
+        if result['success']:
+            # Validate incidents
+            incidents = validate_incidents(result['incidents'])
+            result['incidents'] = incidents
+        
+        return result
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Excel parsing failed: {str(e)}")
+
+
+@app.post("/excel/enrich", tags=["Excel Upload"])
+async def enrich_incidents(data: dict):
+    """
+    Enrich incidents with AI-extracted information
+    """
+    try:
+        from ai.enrichment_agent import enrich_multiple_incidents
+        
+        incidents = data.get('incidents', [])
+        
+        if not incidents:
+            raise HTTPException(status_code=400, detail="No incidents provided")
+        
+        # Enrich with AI
+        enriched = enrich_multiple_incidents(incidents)
+        
+        return {
+            "success": True,
+            "incidents": enriched,
+            "count": len(enriched)
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Enrichment failed: {str(e)}")
+
+
+# Assistant Endpoints
+@app.post("/assistant/chat", tags=["Assistant"])
+async def assistant_chat(data: dict):
+    """
+    Chat with AI assistant
+    
+    Expected input:
+    {
+        "message": "User question",
+        "chat_history": [{"role": "user", "content": "..."}, ...]
+    }
+    """
+    try:
+        from ai.assistant_agent import create_assistant
+        
+        message = data.get('message')
+        chat_history = data.get('chat_history', [])
+        
+        if not message:
+            raise HTTPException(status_code=400, detail="Message is required")
+        
+        # Get database collection
+        collection = get_collection()
+        
+        # Create assistant
+        assistant = create_assistant(collection)
+        
+        # Get response
+        response = assistant.chat(message, chat_history)
+        
+        return response
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Assistant error: {str(e)}")
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

@@ -348,7 +348,7 @@ elif page == "View Incidents":
         for incident in filtered_incidents:
             with st.container():
                 st.markdown(f"""
-                <div class="incident-card">
+                <div class="incident-card" style="border-left-color: {'#EF4444' if incident['severity'] in ['High', 'Critical'] else '#3B82F6'}; background-color: {"#510C03" if incident['severity'] in ['High', 'Critical'] else "#041832"};">
                     <h3>{incident['animal_type']} - {incident['incident_type']}</h3>
                     <p><strong>Location:</strong> {incident['location']} | 
                     <strong>Date:</strong> {incident['date']} | 
@@ -475,10 +475,10 @@ elif page == "About":
             st.rerun()
 
 elif page == "Upload":
-    """Upload Incident Data"""
+    st.switch_page("pages/excel_upload.py")
 
 elif page == "Assistant":
-    """AI Assistant for Incident Analysis"""
+    st.switch_page("pages/assistant.py")
 
 # Footer
 st.markdown("---")
