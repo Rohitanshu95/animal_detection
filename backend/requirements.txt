@@ -1,0 +1,42 @@
+# Frontend Dependencies (Streamlit)
+streamlit==1.32.0
+pandas==2.2.0
+openpyxl==3.1.2
+
+# Backend Dependencies (FastAPI)
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.12
+pydantic>=2.10.1
+
+# Database (MongoDB)
+pymongo==4.6.1
+motor==3.3.2
+
+# AI/ML - Google Generative AI (New SDK)
+google-genai>=0.2.2
+
+# LangChain and LangGraph for AI agents
+langgraph>=0.2.0
+langchain>=0.3.0
+langchain-google-genai>=2.0.0
+langchain-community>=0.3.0
+typing-extensions>=4.9.0
+
+# Vector Store (for semantic search)
+faiss-cpu==1.8.0
+sentence-transformers==2.5.1
+
+# Utilities
+python-dotenv==1.0.1
+requests==2.31.0
+httpx==0.26.0
+
+# Excel/CSV Processing
+xlrd==2.0.1
+openpyxl==3.1.2
+python-dateutil==2.8.2
+
+# Development Tools (optional)
+pytest==8.0.0
+httpx==0.26.0
