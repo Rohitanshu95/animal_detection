@@ -1,0 +1,32 @@
+# Frontend Dependencies (Streamlit)
+streamlit==1.32.0
+pandas==2.2.0
+openpyxl==3.1.2
+
+# Backend Dependencies (FastAPI)
+fastapi==0.110.0
+uvicorn[standard]==0.27.1
+python-multipart==0.0.9
+pydantic==2.6.1
+
+# Database (MongoDB)
+pymongo==4.6.1
+motor==3.3.2
+
+# AI/ML - Google Generative AI (New SDK)
+google-genai==0.2.2
+
+# Vector Store (for future semantic search)
+faiss-cpu==1.8.0
+sentence-transformers==2.5.1
+
+# Utilities
+python-dotenv==1.0.1
+requests==2.31.0
+
+# Excel/CSV Processing
+xlrd==2.0.1
+
+# Development Tools (optional)
+pytest==8.0.0
+httpx==0.26.0
