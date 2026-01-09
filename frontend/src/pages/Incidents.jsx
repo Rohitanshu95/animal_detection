@@ -53,8 +53,15 @@ const Incidents = () => {
       params.append('skip', (overridePage - 1) * LIMIT);
       params.append('sort_order', sortOrder);
       
-      if (filters.status && filters.status.length > 0) params.append('status', filters.status[0]);
-      if (filters.location && filters.location.length > 0) params.append('location', filters.location[0]);
+      if (filters.status && filters.status.length > 0) {
+        filters.status.forEach(s => params.append('status', s));
+      }
+      if (filters.location && filters.location.length > 0) {
+        filters.location.forEach(l => params.append('location', l));
+      }
+      if (filters.species && filters.species.length > 0) {
+        filters.species.forEach(s => params.append('species', s));
+      }
       if (filters.year) {
            // Backend handles date_from/date_to. Convert year to range.
            // Assumes filters.year is "2024", "2023" etc.

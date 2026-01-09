@@ -152,6 +152,7 @@ class ExcelParser:
                 'quarter_number': quarter_info.get('quarter_number'),
                 'quarter_date_range': quarter_info.get('date_range'),
                 'source': 'Quarterly Report',
+                'status': 'Reported',
                 'animals': self._detect_animals(description),
                 'needs_enrichment': True,
                 'validation_issues': []
@@ -167,9 +168,10 @@ class ExcelParser:
         if not description:
             return None
             
-        desc_lower = description.lower()
-        found_items = set()
-
+        # Clean and split into sentences for context scoring
+        description_clean = description.replace('\n', ' ').strip()
+        sentences = re.split(r'[.!?]+', description_clean)
+        
         # --- DEFINITIONS ---
         # Animals (mammals, reptiles, marine mammals, primates, etc. — excluding birds)
         ANIMALS = [
@@ -245,6 +247,14 @@ class ExcelParser:
             "handicraft", "ornament", "jewelry", "carved ivory", "carved_horn"
         ]
         
+        # Signal keywords that indicate the sentence is relevant (seizure, death, crime)
+        CONTEXT_SIGNALS = [
+            "seizure", "seized", "confiscated", "confiscation", "arrested", "arrest", 
+            "smuggled", "smuggling", "trafficked", "trafficking", "poached", "poaching",
+            "killed", "die", "died", "dead", "death", "carcass", "remains", "found", "discovered",
+            "carrying", "possession", "trading", "selling", "bought", "market"
+        ]
+        
         # Mappings for consistent naming
         NORMALIZATION_MAP = {
             "tusker": "Asian Elephant",
@@ -282,70 +292,96 @@ class ExcelParser:
 
         # --- LOGIC ---
         
-        # 1. Search for specific composite products first (Highest Priority)
-        # e.g. "elephant tusks", "rhino horn" found in PRODUCTS
-        for prod in PRODUCTS:
-            if prod in desc_lower:
-                found_items.add(prod)
+        # 1. Filter Sentences
+        # Only process sentences that contain a CONTEXT_SIGNAL or a PRODUCT
+        # This filters out habitat descriptions like "The park is home to tigers."
+        relevant_text_parts = []
+        for sent in sentences:
+            sent_lower = sent.lower()
+            # Check for signals
+            has_signal = any(sig in sent_lower for sig in CONTEXT_SIGNALS)
+            # Check for products (strong signal)
+            has_product = any(prod in sent_lower for prod in PRODUCTS)
+            
+            if has_signal or has_product:
+                relevant_text_parts.append(sent)
+        
+        # Use full description if no signals found (fallback)
+        text_to_scan = " ".join(relevant_text_parts).lower() if relevant_text_parts else description.lower()
+        
+        raw_candidates = set()
 
-        # 2. Search for {Animal} + {Product} patterns using Regex
-        # e.g. "leopard skins", "tiger bones"
+        # 2. Search for specific composite products first (Highest Priority)
+        for prod in PRODUCTS:
+            if prod in text_to_scan:
+                raw_candidates.add(prod)
+
+        # 3. Search for {Animal} + {Product} patterns using Regex
         # We look for Animal followed by Product within 5 words
         animal_pattern = "|".join([re.escape(a) for a in ANIMALS])
         product_pattern = "|".join([re.escape(p) for p in PRODUCTS])
         
         # Regex: (Animal) ... (Product)
         composite_regex = re.compile(f"({animal_pattern})(?:\\s+\\w+){{0,3}}\\s+({product_pattern})")
-        matches = composite_regex.findall(desc_lower)
+        matches = composite_regex.findall(text_to_scan)
         
         for animal, product in matches:
             # Construct composite name e.g. "leopard skin"
-            # We use the raw matched words
             composite = f"{animal} {product}"
-            found_items.add(composite)
+            raw_candidates.add(composite)
             
-        # 3. Search for Animals 
-        # Only add if we haven't found a more specific composite involving this animal?
-        # Actually, user wants "elephant" for "carcass of elephant", even if "tusks" removed.
-        # Let's add animals regardless, and clean up later.
+        # 4. Search for Animals 
         for animal in ANIMALS + BIRDS:
-             # Use word boundary to avoid partial matches (e.g. 'ear' in 'bear')
-             if re.search(r'\b' + re.escape(animal) + r'\b', desc_lower):
-                 # Normalize if possible
-                 normalized = NORMALIZATION_MAP.get(animal, animal.capitalize())
-                 found_items.add(normalized)
+             # Use word boundary
+             if re.search(r'\b' + re.escape(animal) + r'\b', text_to_scan):
+                 raw_candidates.add(animal)
 
-        # 4. Post-processing / Cleanup
-        # If we have "leopard skin" (composite), we might want to remove generic "Animal Skin" or "Leopard"?
-        # User example 1: "leopard skins" -> Output "leopard skins".
-        # User example 2: "elephant tusks" -> Output "elephant tusks".
-        # User example 3: "carcass of elephant... tusks removed" -> Output "elephant".
+        # 5. Verification & Redundancy Removal
+        # a) Verify strictly against text (implicit in Step 1/2/3 but good to double check if constructed)
+        # b) Remove redundancy: If "Leopard Skin" and "Leopard" both found, keep "Leopard Skin".
         
-        # Logic: 
-        # If we found a composite like "leopard skin", keep it.
-        # If we found "elephant" and "ivory" separately, keeping both is fine ("Asian Elephant, Ivory").
-        # The user's requested output for Ex 3 is just "elephant".
-        # This implies if context suggests the animal is the subject (carcass), prioritize animal.
+        verified_candidates = []
+        # First pass: Collect all valid normalized candidates
+        for item in raw_candidates:
+            # Re-verify presence in the scanned text to be safe
+            if item in text_to_scan:
+                verified_candidates.append(item) # Keep raw form for substring check
         
-        # Refinement for user verification compliance:
-        # Just return all detected valid entities.
+        # Second pass: Deduplicate
+        # If 'Leopard Skin' is present, 'Leopard' should be removed
+        unique_items = set()
+        sorted_candidates = sorted(verified_candidates, key=len, reverse=True) # Check longest first
         
-        if found_items:
-            # Sort and return unique
-            # Remove generic "Animal Skin" if we have specific "leopard skin" etc?
-            # For now, keep it simple.
+        for candidate in sorted_candidates:
+            # Check if this candidate is a substring of an already added item
+            # e.g. candidate="leopard", already added="leopard skin" -> Skip
+            is_redundant = False
+            for existing in unique_items:
+                if candidate in existing: 
+                    is_redundant = True
+                    break
             
-            # Map specific keywords to prettier names if in our map
-            final_items = []
-            for item in found_items:
-                # Check if it maps to something
-                if item in NORMALIZATION_MAP:
-                    final_items.append(NORMALIZATION_MAP[item])
-                else:
-                    final_items.append(item.title()) # Capitalize like "Leopard Skins"
-            
-            # Unique and sort
-            return ", ".join(sorted(list(set(final_items))))
+            if not is_redundant:
+                unique_items.add(candidate)
+
+        # Final map to Normalized names
+        final_output = set()
+        for item in unique_items:
+            # Normalization
+            if item in NORMALIZATION_MAP:
+                final_output.add(NORMALIZATION_MAP[item])
+            else:
+                final_output.add(item.title())
+        
+        # Heuristic Cleanup:
+        # If we have specific skins (e.g. "Leopard Skin"), remove generic "Animal Skin"
+        result_list = sorted(list(final_output))
+        has_specific_skin = any('Skin' in x and x != 'Animal Skin' for x in result_list)
+        if has_specific_skin and 'Animal Skin' in result_list:
+             result_list.remove('Animal Skin')
+
+        if result_list:
+            return ", ".join(result_list)
             
         return None
     
