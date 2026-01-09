@@ -1,51 +1,50 @@
 """
 Database Query Tools for LangGraph Agent
-Tools for querying and analyzing wildlife incident data
+Async-native tools with Pydantic validation
 """
 
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Type
 from datetime import datetime, timedelta
 from bson import ObjectId
-import re
+from pydantic import BaseModel, Field
+from langchain_core.tools import BaseTool, StructuredTool
 
+class SearchInput(BaseModel):
+    query: Optional[str] = Field(None, description="Text search across description, animals, and location")
+    location: Optional[str] = Field(None, description="Filter by location name")
+    animals: Optional[str] = Field(None, description="Filter by animal species")
+    status: Optional[str] = Field(None, description="Filter by status (e.g., 'Reported', 'Investigated')")
+    date_from: Optional[str] = Field(None, description="Start date in YYYY-MM-DD format")
+    date_to: Optional[str] = Field(None, description="End date in YYYY-MM-DD format")
+    limit: int = Field(10, description="Maximum number of results to return")
+
+class StatisticsInput(BaseModel):
+    pass
+
+class TrendsInput(BaseModel):
+    field: str = Field(..., description="Field to analyze (e.g., 'animals', 'location', 'status')")
+    period_days: int = Field(30, description="Number of days to analyze back from today")
+
+class AggregateInput(BaseModel):
+    field: str = Field(..., description="Field to aggregate by (e.g., 'animals', 'location')")
+    limit: int = Field(10, description="Number of top results to return")
 
 class DatabaseTools:
     """Tools for querying MongoDB incident database"""
     
     def __init__(self, collection):
-        """
-        Initialize with MongoDB collection
-        
-        Args:
-            collection: Motor AsyncIOMotorCollection instance
-        """
         self.collection = collection
-    
-    async def search_incidents(
-        self,
-        query: Optional[str] = None,
-        location: Optional[str] = None,
-        animals: Optional[str] = None,
-        status: Optional[str] = None,
-        date_from: Optional[str] = None,
-        date_to: Optional[str] = None,
-        limit: int = 10
-    ) -> List[Dict]:
-        """
-        Search incidents with flexible filtering
-        
-        Args:
-            query: Text search across description, animals, location
-            location: Filter by location
-            animals: Filter by animal type
-            status: Filter by status
-            date_from: Start date (YYYY-MM-DD)
-            date_to: End date (YYYY-MM-DD)
-            limit: Maximum results
-            
-        Returns:
-            List of matching incidents
-        """
+
+    async def search_incidents(self, **kwargs) -> List[Dict]:
+        """Search incidents with flexible filtering"""
+        query = kwargs.get('query')
+        location = kwargs.get('location')
+        animals = kwargs.get('animals')
+        status = kwargs.get('status')
+        date_from = kwargs.get('date_from')
+        date_to = kwargs.get('date_to')
+        limit = kwargs.get('limit', 10)
+
         filter_query = {}
         
         # Text search
@@ -76,6 +75,7 @@ class DatabaseTools:
         
         # Execute query
         cursor = self.collection.find(filter_query).limit(limit).sort("created_at", -1)
+        # to_list is a coroutine in Motor
         results = await cursor.to_list(length=limit)
         
         # Convert ObjectId to string
@@ -83,14 +83,9 @@ class DatabaseTools:
             result["_id"] = str(result["_id"])
         
         return results
-    
-    async def get_statistics(self) -> Dict[str, Any]:
-        """
-        Get overall statistics about incidents
-        
-        Returns:
-            Dictionary with various statistics
-        """
+
+    async def get_statistics(self, **kwargs) -> Dict[str, Any]:
+        """Get overall statistics about incidents"""
         # Total count
         total = await self.collection.count_documents({})
         
@@ -120,128 +115,36 @@ class DatabaseTools:
         location_cursor = self.collection.aggregate(location_pipeline)
         top_locations = [{"location": doc["_id"], "count": doc["count"]} async for doc in location_cursor]
         
-        # Recent incidents
-        recent_cursor = self.collection.find().sort("created_at", -1).limit(5)
-        recent = await recent_cursor.to_list(length=5)
-        for r in recent:
-            r["_id"] = str(r["_id"])
-        
         return {
             "total_incidents": total,
             "by_status": by_status,
             "top_animals": top_animals,
-            "top_locations": top_locations,
-            "recent_incidents": recent
+            "top_locations": top_locations
         }
-    
-    async def get_time_series(self, days: int = 30) -> Dict[str, int]:
-        """
-        Get incident counts by date for time series analysis
-        
-        Args:
-            days: Number of days to look back
-            
-        Returns:
-            Dictionary of {date: count}
-        """
-        cutoff_date = (datetime.utcnow() - timedelta(days=days)).strftime('%Y-%m-%d')
-        
-        pipeline = [
-            {"$match": {"date": {"$gte": cutoff_date}}},
-            {"$group": {"_id": "$date", "count": {"$sum": 1}}},
-            {"$sort": {"_id": 1}}
-        ]
-        
-        cursor = self.collection.aggregate(pipeline)
-        time_series = {doc["_id"]: doc["count"] async for doc in cursor}
-        
-        return time_series
-    
-    async def aggregate_by_field(self, field: str, limit: int = 10) -> List[Dict]:
-        """
-        Aggregate incidents by a specific field
-        
-        Args:
-            field: Field name to aggregate by (e.g., 'animals', 'location', 'status')
-            limit: Maximum results
-            
-        Returns:
-            List of {field_value, count} dictionaries
-        """
-        pipeline = [
-            {"$group": {"_id": f"${field}", "count": {"$sum": 1}}},
-            {"$sort": {"count": -1}},
-            {"$limit": limit}
-        ]
-        
-        cursor = self.collection.aggregate(pipeline)
-        results = [{"value": doc["_id"], "count": doc["count"]} async for doc in cursor]
-        
-        return results
-    
-    async def find_similar_incidents(
-        self,
-        incident_id: str,
-        limit: int = 5
-    ) -> List[Dict]:
-        """
-        Find incidents similar to a given incident
-        
-        Args:
-            incident_id: ID of the reference incident
-            limit: Maximum results
-            
-        Returns:
-            List of similar incidents
-        """
-        # Get reference incident
-        ref_incident = await self.collection.find_one({"_id": ObjectId(incident_id)})
-        
-        if not ref_incident:
-            return []
-        
-        # Find similar based on animals and location
-        filter_query = {
-            "_id": {"$ne": ObjectId(incident_id)},
-            "$or": [
-                {"animals": ref_incident.get("animals")},
-                {"location": ref_incident.get("location")}
-            ]
-        }
-        
-        cursor = self.collection.find(filter_query).limit(limit)
-        results = await cursor.to_list(length=limit)
-        
-        for result in results:
-            result["_id"] = str(result["_id"])
-        
-        return results
-    
+
     async def calculate_trends(self, field: str, period_days: int = 30) -> Dict:
-        """
-        Calculate trends for a specific field
-        
-        Args:
-            field: Field to analyze trends for
-            period_days: Number of days to analyze
-            
-        Returns:
-            Trend analysis results
-        """
+        """Calculate trends for a specific field"""
         cutoff_date = (datetime.utcnow() - timedelta(days=period_days)).strftime('%Y-%m-%d')
         
         # Current period
         current_filter = {"date": {"$gte": cutoff_date}}
+        if field == "animals":
+             group_field = "$animals"
+        elif field == "location":
+             group_field = "$location"
+        else:
+             group_field = f"${field}"
+
         current_pipeline = [
             {"$match": current_filter},
-            {"$group": {"_id": f"${field}", "count": {"$sum": 1}}},
+            {"$group": {"_id": group_field, "count": {"$sum": 1}}},
             {"$sort": {"count": -1}}
         ]
         
         current_cursor = self.collection.aggregate(current_pipeline)
         current_counts = {doc["_id"]: doc["count"] async for doc in current_cursor}
         
-        # Previous period
+        # Previous period (simple comparison)
         prev_cutoff = (datetime.utcnow() - timedelta(days=period_days * 2)).strftime('%Y-%m-%d')
         prev_filter = {
             "date": {
@@ -251,72 +154,70 @@ class DatabaseTools:
         }
         prev_pipeline = [
             {"$match": prev_filter},
-            {"$group": {"_id": f"${field}", "count": {"$sum": 1}}},
+            {"$group": {"_id": group_field, "count": {"$sum": 1}}},
             {"$sort": {"count": -1}}
         ]
         
         prev_cursor = self.collection.aggregate(prev_pipeline)
         prev_counts = {doc["_id"]: doc["count"] async for doc in prev_cursor}
         
-        # Calculate changes
         trends = {}
         for key in set(list(current_counts.keys()) + list(prev_counts.keys())):
             current = current_counts.get(key, 0)
             previous = prev_counts.get(key, 0)
             change = current - previous
-            change_pct = (change / previous * 100) if previous > 0 else 0
             
             trends[key] = {
                 "current": current,
                 "previous": previous,
-                "change": change,
-                "change_percent": round(change_pct, 2)
+                "change": change
             }
         
         return trends
 
-
-# LangChain tool wrappers for LangGraph
-def create_langchain_tools(collection):
-    """
-    Create LangChain-compatible tools from DatabaseTools
-    
-    Args:
-        collection: MongoDB collection
+    async def aggregate_by_field(self, field: str, limit: int = 10) -> List[Dict]:
+        """Aggregate incidents by a specific field"""
+        pipeline = [
+            {"$group": {"_id": f"${field}", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}},
+            {"$limit": limit}
+        ]
         
-    Returns:
-        List of LangChain tools
-    """
-    from langchain.tools import Tool
-    
+        cursor = self.collection.aggregate(pipeline)
+        results = [{"value": doc["_id"], "count": doc["count"]} async for doc in cursor]
+        return results
+
+def create_langchain_tools(collection) -> List[BaseTool]:
+    """Create a list of StructuredTools for the agent"""
     db_tools = DatabaseTools(collection)
-    
-    tools = [
-        Tool(
+
+    return [
+        StructuredTool.from_function(
+            func=None,
+            coroutine=db_tools.search_incidents,
             name="search_incidents",
-            description="Search wildlife incidents by query, location, animals, status, or date range. Returns matching incidents.",
-            func=lambda x: db_tools.search_incidents(**eval(x) if isinstance(x, str) else x),
+            description="Search wildlife incidents by query, location, animals, status, or date range.",
+            args_schema=SearchInput
         ),
-        Tool(
+        StructuredTool.from_function(
+            func=None,
+            coroutine=db_tools.get_statistics,
             name="get_statistics",
-            description="Get overall statistics about incidents including totals, top animals, top locations, and status breakdown.",
-            func=lambda x: db_tools.get_statistics(),
+            description="Get overall statistics about incidents including totals, top animals, and top locations.",
+            args_schema=StatisticsInput
         ),
-        Tool(
-            name="get_time_series",
-            description="Get incident counts by date for time series analysis. Useful for trend visualization.",
-            func=lambda x: db_tools.get_time_series(days=int(x) if x else 30),
-        ),
-        Tool(
-            name="aggregate_by_field",
-            description="Aggregate incidents by a specific field (animals, location, status). Returns top values and counts.",
-            func=lambda x: db_tools.aggregate_by_field(**eval(x) if isinstance(x, str) else x),
-        ),
-        Tool(
+        StructuredTool.from_function(
+            func=None,
+            coroutine=db_tools.calculate_trends,
             name="calculate_trends",
-            description="Calculate trends for a specific field over time. Compares current period to previous period.",
-            func=lambda x: db_tools.calculate_trends(**eval(x) if isinstance(x, str) else x),
+            description="Calculate trends for a specific field (animals, location) over time.",
+            args_schema=TrendsInput
         ),
+        StructuredTool.from_function(
+            func=None,
+            coroutine=db_tools.aggregate_by_field,
+            name="aggregate_by_field",
+            description="Aggregate incidents by a specific field to see top values.",
+            args_schema=AggregateInput
+        )
     ]
-    
-    return tools

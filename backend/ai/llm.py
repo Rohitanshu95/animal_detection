@@ -41,7 +41,7 @@ else:
         print("⚠️ Warning: GOOGLE_API_KEY not found in environment variables")
 
 # Model configuration
-MODEL_NAME = "gemini-1.5-flash"  # or "gemini-1.5-pro" for better quality
+MODEL_NAME = "gemini-2.5-flash"  # or "gemini-1.5-pro" for better quality
 
 
 def get_model(model_name: str = MODEL_NAME):

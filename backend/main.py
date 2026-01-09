@@ -11,7 +11,6 @@ from datetime import datetime
 from bson import ObjectId
 import pandas as pd
 import io
-from ai.assistant_agent import create_assistant
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -472,12 +471,10 @@ async def assistant_chat(data: dict):
         "chat_history": [{"role": "user", "content": "..."}, ...]
     }
     """
-    print(data)
     try:
+        from ai.assistant_agent import create_assistant
         
-        print(data)
         message = data.get('message')
-        print("user message" + message)
         chat_history = data.get('chat_history', [])
         
         if not message:
@@ -489,12 +486,14 @@ async def assistant_chat(data: dict):
         # Create assistant
         assistant = create_assistant(collection)
         
-        # Get response
-        response = assistant.chat(message, chat_history)
-        print("assistant response" + response)
+        # Get response (awaiting the async chat method)
+        response = await assistant.chat(message, chat_history)
+        # print(response)
         return response
         
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Assistant error: {str(e)}")
 
 

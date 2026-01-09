@@ -27,18 +27,26 @@ class VectorSearchTools:
         """Initialize FAISS index and embeddings model"""
         try:
             import faiss
-            from sentence_transformers import SentenceTransformer
+            from langchain_google_genai import GoogleGenerativeAIEmbeddings
             
             # Load embeddings model
-            self.embeddings_model = SentenceTransformer('all-MiniLM-L6-v2')
+            api_key = os.getenv("GOOGLE_API_KEY")
+            if not api_key:
+                print("Warning: GOOGLE_API_KEY not found for embeddings.")
+                self.embeddings_model = None
+            else:
+                self.embeddings_model = GoogleGenerativeAIEmbeddings(
+                    model="models/embedding-001", 
+                    google_api_key=api_key
+                )
             
             # Load FAISS index if exists
             index_path = os.path.join(self.vector_store_path, "faiss_index")
             if os.path.exists(index_path):
                 self.index = faiss.read_index(index_path)
             else:
-                # Create new index (384 dimensions for all-MiniLM-L6-v2)
-                self.index = faiss.IndexFlatL2(384)
+                # Create new index (768 dimensions for embedding-001)
+                self.index = faiss.IndexFlatL2(768)
                 
         except ImportError as e:
             print(f"Warning: Could not initialize vector search: {e}")
@@ -58,7 +66,8 @@ class VectorSearchTools:
         texts = [doc.get('text', doc.get('description', '')) for doc in documents]
         
         # Generate embeddings
-        embeddings = self.embeddings_model.encode(texts)
+        # LangChain embeddings return a list of floats
+        embeddings = self.embeddings_model.embed_documents(texts)
         
         # Add to FAISS index
         self.index.add(np.array(embeddings).astype('float32'))
@@ -85,11 +94,11 @@ class VectorSearchTools:
             return []
         
         # Generate query embedding
-        query_embedding = self.embeddings_model.encode([query])
+        query_embedding = self.embeddings_model.embed_query(query)
         
         # Search
         distances, indices = self.index.search(
-            np.array(query_embedding).astype('float32'),
+            np.array([query_embedding]).astype('float32'),
             top_k
         )
         
