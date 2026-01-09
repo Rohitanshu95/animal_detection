@@ -107,6 +107,11 @@ async def create_incident(incident: IncidentCreate, use_ai: bool = Query(True, d
             incident_dict["extracted_location"] = entities.get("location")
             incident_dict["keywords"] = entities.get("keywords", [])
             
+            # Auto-populate animals field if missing
+            if not incident_dict.get("animals") and entities.get("animals"):
+                # Take the first extracted animal/product as the main category
+                incident_dict["animals"] = entities["animals"][0]
+            
             # Generate AI summary
             summary = await generate_summary(incident.description)
             incident_dict["ai_summary"] = summary
@@ -114,6 +119,10 @@ async def create_incident(incident: IncidentCreate, use_ai: bool = Query(True, d
         except Exception as e:
             print(f"⚠️ AI processing failed: {e}")
             # Continue without AI features
+            
+    # Default 'animals' if still missing
+    if not incident_dict.get("animals"):
+        incident_dict["animals"] = "Unknown"
     
     # Insert into database
     result = await collection.insert_one(incident_dict)
@@ -131,18 +140,18 @@ async def get_incidents(
     limit: int = Query(10, ge=1, le=100),
     status: Optional[str] = None,
     location: Optional[str] = None,
+    sort_order: str = Query("desc", regex="^(asc|desc)$"),
     date_from: Optional[str] = None,
     date_to: Optional[str] = None
 ):
     """
-    Get all incidents with optional filters
+    Get all incidents with optional filters and sorting
     
     - **skip**: Number of records to skip (pagination)
     - **limit**: Maximum number of records to return
     - **status**: Filter by status (Reported, Investigated, Prosecuted, Closed)
     - **location**: Filter by location (partial match)
-    - **date_from**: Filter incidents from this date (YYYY-MM-DD)
-    - **date_to**: Filter incidents until this date (YYYY-MM-DD)
+    - **sort_order**: Sort by created_at (asc=Oldest First, desc=Newest First)
     """
     collection = get_collection()
     
@@ -159,8 +168,11 @@ async def get_incidents(
         if date_to:
             query["date"]["$lte"] = date_to
     
+    # Determine sort direction
+    direction = -1 if sort_order == "desc" else 1
+
     # Execute query
-    cursor = collection.find(query).skip(skip).limit(limit).sort("created_at", -1)
+    cursor = collection.find(query).skip(skip).limit(limit).sort("created_at", direction)
     incidents = await cursor.to_list(length=limit)
     
     # Convert ObjectId to string
@@ -353,7 +365,7 @@ async def bulk_upload(file: UploadFile = File(...), use_ai: bool = Query(False))
         raise HTTPException(status_code=400, detail=f"Error reading file: {str(e)}")
     
     # Validate required columns
-    required_columns = ['date', 'location', 'animals', 'description', 'source']
+    required_columns = ['date', 'location', 'description', 'source']
     missing_columns = [col for col in required_columns if col not in df.columns]
     
     if missing_columns:
@@ -385,11 +397,19 @@ async def bulk_upload(file: UploadFile = File(...), use_ai: bool = Query(False))
                     incident["extracted_location"] = entities.get("location")
                     incident["keywords"] = entities.get("keywords", [])
                     
+                    # Auto-populate animals if missing
+                    if ('animals' not in incident or pd.isna(incident['animals'])) and entities.get("animals"):
+                         incident["animals"] = entities["animals"][0]
+                    
                     summary = await generate_summary(str(incident['description']))
                     incident["ai_summary"] = summary
                 except:
                     pass  # Continue without AI features
             
+            # Default 'animals' if still missing or NaN
+            if 'animals' not in incident or pd.isna(incident['animals']):
+                incident['animals'] = "Unknown"
+                
             # Insert
             await collection.insert_one(incident)
             inserted_count += 1
@@ -407,7 +427,90 @@ async def bulk_upload(file: UploadFile = File(...), use_ai: bool = Query(False))
     }
 
 
-# Excel Upload Endpoints
+@app.post("/incidents/batch", response_model=BulkUploadResponse, tags=["Bulk Operations"])
+async def batch_create_incidents(incidents: List[IncidentCreate]):
+    """
+    Batch create incidents from JSON list
+    """
+    collection = get_collection()
+    inserted_count = 0
+    failed_count = 0
+    errors = []
+    
+    for idx, incident_data in enumerate(incidents):
+        try:
+            incident_dict = incident_data.dict()
+            incident_dict["created_at"] = datetime.utcnow()
+            incident_dict["updated_at"] = datetime.utcnow()
+            
+            # Insert
+            await collection.insert_one(incident_dict)
+            inserted_count += 1
+            
+        except Exception as e:
+            failed_count += 1
+            errors.append(f"Item {idx + 1}: {str(e)}")
+            
+    return {
+        "success": True,
+        "total_records": len(incidents),
+        "inserted_records": inserted_count,
+        "failed_records": failed_count,
+        "errors": errors if errors else None
+    }
+
+@app.get("/incidents/filters", tags=["Incidents"])
+async def get_incident_filters():
+    """Get dynamic filter options and counts"""
+    collection = get_collection()
+    
+    pipeline = [
+        {
+            "$facet": {
+                "status_counts": [
+                    {"$group": {"_id": "$status", "count": {"$sum": 1}}},
+                    {"$sort": {"count": -1}}
+                ],
+                "location_counts": [
+                    {"$group": {"_id": "$location", "count": {"$sum": 1}}},
+                    {"$sort": {"count": -1}},
+                    {"$limit": 10}
+                ],
+                "species_counts": [
+                    {"$unwind": {"path": "$extracted_animals", "preserveNullAndEmptyArrays": True}},
+                    {"$group": {"_id": "$extracted_animals", "count": {"$sum": 1}}},
+                    {"$match": {"_id": {"$ne": None}}},
+                    {"$sort": {"count": -1}},
+                    {"$limit": 10}
+                ],
+                "year_counts": [
+                    {
+                        "$project": {
+                            "year": {"$substr": ["$date", 0, 4]}
+                        }
+                    },
+                    {"$group": {"_id": "$year", "count": {"$sum": 1}}},
+                    {"$sort": {"_id": -1}}
+                ]
+            }
+        }
+    ]
+    
+    try:
+        result = await collection.aggregate(pipeline).to_list(length=1)
+        stats = result[0] if result else {}
+        
+        return {
+            "status": {item["_id"]: item["count"] for item in stats.get("status_counts", [])},
+            "location": {item["_id"]: item["count"] for item in stats.get("location_counts", [])},
+            "species": {item["_id"]: item["count"] for item in stats.get("species_counts", [])},
+            "years": {item["_id"]: item["count"] for item in stats.get("year_counts", [])}
+        }
+    except Exception as e:
+        print(f"Filter aggregation error: {e}")
+        return {"status": {}, "location": {}, "species": {}, "years": {}}
+
+
 @app.post("/excel/parse", tags=["Excel Upload"])
 async def parse_excel(file: UploadFile = File(...)):
     """

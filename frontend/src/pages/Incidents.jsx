@@ -4,7 +4,7 @@ import axios from 'axios';
 import IncidentFilters from '../components/incidents/IncidentFilters';
 import IncidentCard from '../components/incidents/IncidentCard';
 import IncidentFormModal from '../components/incidents/IncidentFormModal';
-import { Plus, Search, Loader, X, MapPin, Calendar, Bot } from 'lucide-react';
+import { Plus, Search, Loader, X, MapPin, Calendar, Bot, Trash2, ArrowUp, ArrowDown } from 'lucide-react';
 
 // Mock data
 const MOCK_INCIDENTS = Array.from({ length: 9 }).map((_, i) => ({
@@ -20,19 +20,57 @@ const Incidents = () => {
   const [incidents, setIncidents] = useState([]);
   const [selectedIncident, setSelectedIncident] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState({});
+  const [stats, setStats] = useState({});
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [sortOrder, setSortOrder] = useState('desc'); // 'desc' = Newest First, 'asc' = Oldest First
+  const LIMIT = 12;
 
-  const fetchIncidents = async () => {
+  // Fetch stats for sidebar
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const res = await axios.get('http://localhost:8000/incidents/filters');
+        setStats(res.data);
+      } catch (err) {
+        console.error("Failed to fetch stats", err);
+      }
+    };
+    fetchStats();
+  }, []);
+
+  // Fetch incidents
+  const fetchIncidents = async (overridePage = page) => {
     setIsLoading(true);
     try {
       const params = new URLSearchParams();
-      if (searchQuery) params.append('search', searchQuery);
-      // Add other filters as needed by your backend API
+      if (searchQuery) params.append('query', searchQuery);
       
+      params.append('limit', LIMIT);
+      params.append('skip', (overridePage - 1) * LIMIT);
+      params.append('sort_order', sortOrder);
+      
+      if (filters.status && filters.status.length > 0) params.append('status', filters.status[0]);
+      if (filters.location && filters.location.length > 0) params.append('location', filters.location[0]);
+      if (filters.year) {
+           // Backend handles date_from/date_to. Convert year to range.
+           // Assumes filters.year is "2024", "2023" etc.
+           params.append('date_from', `${filters.year}-01-01`);
+           params.append('date_to', `${filters.year}-12-31`);
+      }
+
       const response = await axios.get(`http://localhost:8000/incidents?${params.toString()}`);
-      setIncidents(response.data);
+      
+      if (overridePage === 1) {
+        setIncidents(response.data);
+      } else {
+        setIncidents(prev => [...prev, ...response.data]);
+      }
+      setHasMore(response.data.length === LIMIT);
+      
     } catch (error) {
       console.error("Failed to fetch incidents:", error);
     } finally {
@@ -41,14 +79,22 @@ const Incidents = () => {
   };
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      fetchIncidents();
-    }, 500); // Debounce search
-    return () => clearTimeout(timer);
-  }, [searchQuery, filters]);
+    // Reset page when filters/search/sort change
+    setPage(1);
+    fetchIncidents(1);
+  }, [searchQuery, filters, sortOrder]);
+
+  const handleLoadMore = () => {
+     setPage(p => {
+        const nextPage = p + 1;
+        fetchIncidents(nextPage);
+        return nextPage;
+     });
+  };
 
   const handleIncidentCreated = () => {
-    fetchIncidents();
+    setPage(1);
+    fetchIncidents(1);
     setIsModalOpen(false);
   };
 
@@ -56,7 +102,7 @@ const Incidents = () => {
     <div className="flex h-screen -m-8 overflow-hidden">
       {/* Filters Sidebar */}
       <div className="hidden lg:block w-72 h-full border-r border-slate-200 bg-white shrink-0 z-10">
-        <IncidentFilters filters={filters} setFilters={setFilters} />
+        <IncidentFilters filters={filters} setFilters={setFilters} stats={stats} />
       </div>
 
       {/* Main Content */}
@@ -68,39 +114,69 @@ const Incidents = () => {
               type="text" 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by description, animal, or location..." 
+              placeholder="Search by location..." 
               className="w-full bg-slate-100 border-transparent focus:bg-white border focus:border-emerald-500 rounded-full py-2.5 pl-10 pr-4 text-sm text-slate-800 focus:outline-none transition-all"
             />
           </div>
           
-          <button 
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-full font-bold shadow-md hover:shadow-lg transition-all"
-          >
-            <Plus className="w-5 h-5" />
-            New Entry
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+               onClick={() => setSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}
+               className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-full text-sm font-semibold text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-all"
+               title={sortOrder === 'desc' ? "Sort Oldest First" : "Sort Newest First"}
+            >
+               {sortOrder === 'desc' ? (
+                 <>
+                   <ArrowDown className="w-4 h-4 text-slate-500" />
+                   Newest First
+                 </>
+               ) : (
+                 <>
+                   <ArrowUp className="w-4 h-4 text-slate-500" />
+                   Oldest First
+                 </>
+               )}
+            </button>
+
+            <button 
+                onClick={() => setIsModalOpen(true)}
+                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-full font-bold shadow-md hover:shadow-lg transition-all"
+            >
+                <Plus className="w-5 h-5" />
+                New Entry
+            </button>
+          </div>
         </div>
 
-        <div className="p-8">
-          {isLoading ? (
-            <div className="flex justify-center py-20">
-              <Loader className="w-8 h-8 animate-spin text-emerald-600" />
-            </div>
-          ) : incidents.length === 0 ? (
+        <div className="p-8 pb-20">
+          {incidents.length === 0 && !isLoading ? (
             <div className="text-center py-20 text-slate-500">
               No incidents found matching your criteria.
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 mb-8">
-              {incidents.map((incident) => (
-                <IncidentCard 
-                  key={incident._id} 
-                  incident={incident} 
-                  onClick={setSelectedIncident}
-                />
-              ))}
-            </div>
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 mb-8">
+                {incidents.map((incident) => (
+                  <IncidentCard 
+                    key={incident._id} 
+                    incident={incident} 
+                    onClick={setSelectedIncident}
+                  />
+                ))}
+              </div>
+              
+              {hasMore && (
+                <div className="flex justify-center mt-8">
+                  <button 
+                    onClick={handleLoadMore}
+                    disabled={isLoading}
+                    className="px-6 py-2 bg-white border border-slate-200 text-slate-600 font-medium rounded-full shadow-sm hover:bg-slate-50 hover:border-slate-300 transition-all disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {isLoading ? <Loader className="w-4 h-4 animate-spin" /> : 'Load More Incidents'}
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -189,6 +265,25 @@ const Incidents = () => {
 
           {/* Drawer Footer */}
           <div className="p-6 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
+             <button 
+              onClick={async () => {
+                if(window.confirm('Are you sure you want to delete this incident?')) {
+                  try {
+                    await axios.delete(`http://localhost:8000/incidents/${selectedIncident._id}`);
+                    fetchIncidents();
+                    setSelectedIncident(null);
+                  } catch (e) {
+                    console.error("Delete failed", e);
+                    alert("Failed to delete incident");
+                  }
+                }
+              }}
+              className="px-5 py-2.5 rounded-lg border border-red-200 text-red-600 font-semibold hover:bg-red-50 hover:border-red-300 transition-all flex items-center gap-2"
+            >
+              <Trash2 className="w-4 h-4" />
+              Delete
+            </button>
+            
             <button className="px-5 py-2.5 rounded-lg border border-slate-200 text-slate-600 font-semibold hover:bg-white hover:border-slate-300 transition-all">
               Edit Record
             </button>

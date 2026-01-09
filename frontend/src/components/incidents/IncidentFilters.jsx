@@ -20,7 +20,20 @@ const Checkbox = ({ label, count }) => (
   </label>
 );
 
-const IncidentFilters = ({ onClose }) => {
+const IncidentFilters = ({ filters, setFilters, stats, onClose }) => {
+  const handleFilterChange = (category, value) => {
+    setFilters(prev => {
+      const current = prev[category] || [];
+      const updated = current.includes(value)
+        ? current.filter(item => item !== value)
+        : [...current, value];
+      
+      return { ...prev, [category]: updated };
+    });
+  };
+
+  const isSelected = (category, value) => (filters[category] || []).includes(value);
+
   return (
     <div className="w-full h-full border-r border-slate-200 p-6 flex flex-col overflow-y-auto bg-white">
       <div className="flex items-center justify-between mb-6">
@@ -35,33 +48,72 @@ const IncidentFilters = ({ onClose }) => {
         )}
       </div>
 
+      {/* Status Filter */}
       <FilterSection title="Status">
-        <Checkbox label="Reported" count="12" />
-        <Checkbox label="Investigated" count="5" />
-        <Checkbox label="Closed" count="89" />
-        <Checkbox label="Prosecuted" count="3" />
+        {stats?.status && Object.entries(stats.status).map(([status, count]) => (
+          <label key={status} className="flex items-center justify-between cursor-pointer group select-none">
+            <div className="flex items-center gap-2">
+              <input 
+                type="checkbox" 
+                checked={isSelected('status', status)}
+                onChange={() => handleFilterChange('status', status)}
+                className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" 
+              />
+              <span className="text-sm text-slate-600 group-hover:text-slate-900 transition-colors">{status}</span>
+            </div>
+            <span className="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{count}</span>
+          </label>
+        ))}
       </FilterSection>
 
+      {/* Year Filter */}
       <FilterSection title="Year">
-        <select className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-sm text-slate-700 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
-          <option>All Time</option>
-          <option>2024</option>
-          <option>2023</option>
-          <option>2022</option>
+        <select 
+          onChange={(e) => setFilters(prev => ({ ...prev, year: e.target.value }))}
+          value={filters.year || ''}
+          className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-sm text-slate-700 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+        >
+          <option value="">All Time</option>
+          {stats?.years && Object.entries(stats.years).map(([year, count]) => (
+            <option key={year} value={year}>{year} ({count})</option>
+          ))}
         </select>
       </FilterSection>
 
+      {/* Species Filter */}
       <FilterSection title="Species">
-        <Checkbox label="Elephant" count="45" />
-        <Checkbox label="Pangolin" count="32" />
-        <Checkbox label="Tiger" count="12" />
-        <Checkbox label="Rhino" count="8" />
+        {stats?.species && Object.entries(stats.species).map(([species, count]) => (
+          <label key={species} className="flex items-center justify-between cursor-pointer group select-none">
+            <div className="flex items-center gap-2">
+              <input 
+                 type="checkbox"
+                 checked={isSelected('species', species)}
+                 onChange={() => handleFilterChange('species', species)}
+                 className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" 
+              />
+              <span className="text-sm text-slate-600 group-hover:text-slate-900 transition-colors truncate max-w-[120px]" title={species}>{species}</span>
+            </div>
+            <span className="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{count}</span>
+          </label>
+        ))}
       </FilterSection>
-
+      
+      {/* Location Filter */}
       <FilterSection title="Region / Division">
-        <Checkbox label="Baripada" count="24" />
-        <Checkbox label="Athagarh" count="15" />
-        <Checkbox label="Similipal" count="42" />
+          {stats?.location && Object.entries(stats.location).map(([location, count]) => (
+            <label key={location} className="flex items-center justify-between cursor-pointer group select-none">
+              <div className="flex items-center gap-2">
+                <input 
+                   type="checkbox"
+                   checked={isSelected('location', location)}
+                   onChange={() => handleFilterChange('location', location)}
+                   className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" 
+                />
+                <span className="text-sm text-slate-600 group-hover:text-slate-900 transition-colors truncate max-w-[120px]" title={location}>{location}</span>
+              </div>
+              <span className="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{count}</span>
+            </label>
+          ))}
       </FilterSection>
     </div>
   );

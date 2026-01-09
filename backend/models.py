@@ -39,10 +39,10 @@ class IncidentBase(BaseModel):
     """Base incident model with common fields"""
     date: str = Field(..., description="Date of incident in YYYY-MM-DD format")
     location: str = Field(..., description="Location of incident (city, state, country)")
-    animals: str = Field(..., description="Type of animal or wildlife product")
+    animals: Optional[str] = Field(None, description="Type of animal or wildlife product")
     quantity: Optional[str] = Field(None, description="Quantity seized or reported")
     description: str = Field(..., description="Detailed description of the incident")
-    source: str = Field(..., description="Information source or reporting agency")
+    source: Optional[str] = Field("Unknown", description="Information source or reporting agency")
     status: str = Field(default="Reported", description="Current status of the case")
     
     # Optional fields
