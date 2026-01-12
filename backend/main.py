@@ -25,6 +25,8 @@ from database import (
 )
 from ai.extractor import extract_entities_from_text
 from ai.summarizer import generate_summary
+from ai.filter_utils import clean_extracted_animals
+from tag_assigner import assign_tags_to_incident
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -103,7 +105,8 @@ async def create_incident(incident: IncidentCreate, use_ai: bool = Query(True, d
         try:
             # Extract entities from description
             entities = await extract_entities_from_text(incident.description)
-            incident_dict["extracted_animals"] = entities.get("animals", [])
+            raw_animals = entities.get("animals", [])
+            incident_dict["extracted_animals"] = clean_extracted_animals(raw_animals)
             incident_dict["extracted_location"] = entities.get("location")
             incident_dict["keywords"] = entities.get("keywords", [])
             
@@ -123,7 +126,12 @@ async def create_incident(incident: IncidentCreate, use_ai: bool = Query(True, d
     # Default 'animals' if still missing
     if not incident_dict.get("animals"):
         incident_dict["animals"] = "Unknown"
-    
+
+    # Auto-assign tags based on incident content
+    assigned_tags = assign_tags_to_incident(incident_dict)
+    if assigned_tags:
+        incident_dict["tags"] = assigned_tags
+
     # Insert into database
     result = await collection.insert_one(incident_dict)
     
@@ -138,8 +146,12 @@ async def create_incident(incident: IncidentCreate, use_ai: bool = Query(True, d
 async def get_incidents(
     skip: int = Query(0, ge=0),
     limit: int = Query(10, ge=1, le=100),
-    status: Optional[str] = None,
-    location: Optional[str] = None,
+    query: Optional[str] = None,
+    status: Optional[List[str]] = Query(None),
+    species: Optional[List[str]] = Query(None),
+    location: Optional[List[str]] = Query(None),
+    tags: Optional[List[str]] = Query(None),
+    year: Optional[str] = None,
     sort_order: str = Query("desc", regex="^(asc|desc)$"),
     date_from: Optional[str] = None,
     date_to: Optional[str] = None
@@ -147,32 +159,65 @@ async def get_incidents(
     """
     Get all incidents with optional filters and sorting
     
-    - **skip**: Number of records to skip (pagination)
+    - **skip**: Number of records to skip
     - **limit**: Maximum number of records to return
-    - **status**: Filter by status (Reported, Investigated, Prosecuted, Closed)
-    - **location**: Filter by location (partial match)
-    - **sort_order**: Sort by created_at (asc=Oldest First, desc=Newest First)
+    - **query**: Text search query
+    - **status**: Filter by status (List)
+    - **species**: Filter by species (List)
+    - **location**: Filter by location (List, partial match supported)
+    - **sort_order**: Sort by created_at
     """
     collection = get_collection()
     
-    # Build query
-    query = {}
+    # Build query conditions
+    conditions = []
+    
+    # Text Search (Global)
+    if query:
+        search_regex = {"$regex": query, "$options": "i"}
+        conditions.append({
+            "$or": [
+                {"description": search_regex},
+                {"location": search_regex},
+                {"animals": search_regex},
+                {"extracted_animals": search_regex},
+                {"source": search_regex}
+            ]
+        })
+
+    # Filters
     if status:
-        query["status"] = status
+        conditions.append({"status": {"$in": status}})
+        
+    if species:
+        conditions.append({"extracted_animals": {"$in": species}})
+        
     if location:
-        query["location"] = {"$regex": location, "$options": "i"}
+        conditions.append({
+            "$or": [{"location": {"$regex": loc, "$options": "i"}} for loc in location]
+        })
+    if tags:
+        conditions.append({"tags": {"$in": tags}})
+        
+    if year:
+        conditions.append({"date": {"$regex": f"^{year}", "$options": "i"}})
+
     if date_from or date_to:
-        query["date"] = {}
+        date_query = {}
         if date_from:
-            query["date"]["$gte"] = date_from
+            date_query["$gte"] = date_from
         if date_to:
-            query["date"]["$lte"] = date_to
+            date_query["$lte"] = date_to
+        conditions.append({"date": date_query})
+    
+    # Combine conditions
+    mongo_query = {"$and": conditions} if conditions else {}
     
     # Determine sort direction
     direction = -1 if sort_order == "desc" else 1
 
     # Execute query
-    cursor = collection.find(query).skip(skip).limit(limit).sort("created_at", direction)
+    cursor = collection.find(mongo_query).skip(skip).limit(limit).sort("created_at", direction)
     incidents = await cursor.to_list(length=limit)
     
     # Convert ObjectId to string
@@ -180,6 +225,83 @@ async def get_incidents(
         incident["_id"] = str(incident["_id"])
     
     return incidents
+
+
+
+@app.get("/incidents/filters", tags=["Incidents"])
+async def get_incident_filters():
+    """Get dynamic filter options and counts"""
+    collection = get_collection()
+    
+    pipeline = [
+        {
+            "$facet": {
+                "status_counts": [
+                    {"$group": {"_id": "$status", "count": {"$sum": 1}}},
+                    {"$sort": {"count": -1}}
+                ],
+                "location_counts": [
+                    {"$group": {"_id": "$location", "count": {"$sum": 1}}},
+                    {"$sort": {"count": -1}},
+                    {"$limit": 10}
+                ],
+                "species_counts": [
+                    {"$unwind": {"path": "$extracted_animals", "preserveNullAndEmptyArrays": True}},
+                    {"$group": {"_id": "$extracted_animals", "count": {"$sum": 1}}},
+                    {"$match": {"_id": {"$ne": None}}},
+                    {"$sort": {"count": -1}},
+                    {"$limit": 10}
+                ],
+                "tags_counts": [
+                    {"$unwind": {"path": "$tags", "preserveNullAndEmptyArrays": True}},
+                    {"$group": {"_id": "$tags", "count": {"$sum": 1}}},
+                    {"$match": {"_id": {"$ne": None}}},
+                    {"$sort": {"count": -1}},
+                    {"$limit": 10}
+                ],
+                "year_counts": [
+                    {
+                        "$project": {
+                            "year": {"$substr": ["$date", 0, 4]}
+                        }
+                    },
+                    {"$group": {"_id": "$year", "count": {"$sum": 1}}},
+                    {"$sort": {"_id": -1}}
+                ]
+            }
+        }
+    ]
+    
+    # Predefined tags for wildlife incidents
+    predefined_tags = [
+        "Animal Hunting", "Animal Killing", "Poaching", "Animal Smuggling",
+        "Illegal Wildlife Trade", "Animal Capture", "Animal Injury/Cruelty",
+        "Seizure of Animal Products", "Illegal Weapon Usage", "Forest Law Violation",
+        "Arrest/Legal Action", "Rescue and Rehabilitation"
+    ]
+
+    try:
+        result = await collection.aggregate(pipeline).to_list(length=1)
+        stats = result[0] if result else {}
+
+        # Get actual tag counts from database
+        actual_tags = {item["_id"]: item["count"] for item in stats.get("tags_counts", [])}
+
+        # Merge predefined tags with actual counts (use 0 for predefined tags not in database)
+        tags_stats = {}
+        for tag in predefined_tags:
+            tags_stats[tag] = actual_tags.get(tag, 0)
+
+        return {
+            "status": {item["_id"]: item["count"] for item in stats.get("status_counts", [])},
+            "location": {item["_id"]: item["count"] for item in stats.get("location_counts", [])},
+            "species": {item["_id"]: item["count"] for item in stats.get("species_counts", [])},
+            "tags": tags_stats,
+            "years": {item["_id"]: item["count"] for item in stats.get("year_counts", [])}
+        }
+    except Exception as e:
+        print(f"Filter aggregation error: {e}")
+        return {"status": {}, "location": {}, "species": {}, "tags": {}, "years": {}}
 
 
 @app.get("/incidents/{incident_id}", response_model=IncidentResponse, tags=["Incidents"])
@@ -276,24 +398,62 @@ async def search_incidents(search_query: SearchQuery):
 # Statistics Endpoint
 
 @app.get("/statistics", response_model=StatisticsResponse, tags=["Analytics"])
-async def get_statistics():
+async def get_statistics(
+    location: Optional[str] = None,
+    species: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None
+):
     """
-    Get overall statistics and analytics
+    Get overall statistics and analytics with optional filters
+
+    - **location**: Filter by location (partial match)
+    - **species**: Filter by species (partial match)
+    - **date_from**: Filter incidents from this date (YYYY-MM-DD)
+    - **date_to**: Filter incidents to this date (YYYY-MM-DD)
     """
     collection = get_collection()
-    
-    # Total incidents
-    total = await collection.count_documents({})
-    
-    # By status
+
+    # Build base query for filtering
+    base_query = {}
+    conditions = []
+
+    if location:
+        conditions.append({"location": {"$regex": location, "$options": "i"}})
+
+    if species:
+        conditions.append({
+            "$or": [
+                {"animals": {"$regex": species, "$options": "i"}},
+                {"extracted_animals": {"$regex": species, "$options": "i"}}
+            ]
+        })
+
+    if date_from or date_to:
+        date_query = {}
+        if date_from:
+            date_query["$gte"] = date_from
+        if date_to:
+            date_query["$lte"] = date_to
+        conditions.append({"date": date_query})
+
+    if conditions:
+        base_query = {"$and": conditions}
+
+    # Total incidents (filtered)
+    total = await collection.count_documents(base_query)
+
+    # By status (filtered)
     status_pipeline = [
+        {"$match": base_query},
         {"$group": {"_id": "$status", "count": {"$sum": 1}}}
     ]
     status_result = await collection.aggregate(status_pipeline).to_list(None)
     by_status = {item["_id"]: item["count"] for item in status_result}
-    
-    # By month
+
+    # By month (filtered)
     month_pipeline = [
+        {"$match": base_query},
         {"$group": {
             "_id": {"$substr": ["$date", 0, 7]},
             "count": {"$sum": 1}
@@ -303,31 +463,33 @@ async def get_statistics():
     ]
     month_result = await collection.aggregate(month_pipeline).to_list(None)
     by_month = {item["_id"]: item["count"] for item in month_result}
-    
-    # Top locations
+
+    # Top locations (filtered)
     location_pipeline = [
+        {"$match": base_query},
         {"$group": {"_id": "$location", "count": {"$sum": 1}}},
         {"$sort": {"count": -1}},
         {"$limit": 10}
     ]
     location_result = await collection.aggregate(location_pipeline).to_list(None)
     top_locations = [{"location": item["_id"], "count": item["count"]} for item in location_result]
-    
-    # Top animals
+
+    # Top animals (filtered)
     animals_pipeline = [
+        {"$match": base_query},
         {"$group": {"_id": "$animals", "count": {"$sum": 1}}},
         {"$sort": {"count": -1}},
         {"$limit": 10}
     ]
     animals_result = await collection.aggregate(animals_pipeline).to_list(None)
     top_animals = [{"animal": item["_id"], "count": item["count"]} for item in animals_result]
-    
-    # Recent incidents
-    recent_cursor = collection.find().sort("created_at", -1).limit(5)
+
+    # Recent incidents (filtered)
+    recent_cursor = collection.find(base_query).sort("created_at", -1).limit(5)
     recent_incidents = await recent_cursor.to_list(length=5)
     for incident in recent_incidents:
         incident["_id"] = str(incident["_id"])
-    
+
     return {
         "total_incidents": total,
         "by_status": by_status,
@@ -393,7 +555,8 @@ async def bulk_upload(file: UploadFile = File(...), use_ai: bool = Query(False))
             if use_ai and 'description' in incident:
                 try:
                     entities = await extract_entities_from_text(str(incident['description']))
-                    incident["extracted_animals"] = entities.get("animals", [])
+                    raw_animals = entities.get("animals", [])
+                    incident["extracted_animals"] = clean_extracted_animals(raw_animals)
                     incident["extracted_location"] = entities.get("location")
                     incident["keywords"] = entities.get("keywords", [])
                     
@@ -409,7 +572,12 @@ async def bulk_upload(file: UploadFile = File(...), use_ai: bool = Query(False))
             # Default 'animals' if still missing or NaN
             if 'animals' not in incident or pd.isna(incident['animals']):
                 incident['animals'] = "Unknown"
-                
+
+            # Auto-assign tags based on incident content
+            assigned_tags = assign_tags_to_incident(incident)
+            if assigned_tags:
+                incident["tags"] = assigned_tags
+
             # Insert
             await collection.insert_one(incident)
             inserted_count += 1
@@ -443,6 +611,16 @@ async def batch_create_incidents(incidents: List[IncidentCreate]):
             incident_dict["created_at"] = datetime.utcnow()
             incident_dict["updated_at"] = datetime.utcnow()
             
+            # Populate extracted_animals for filters
+            if incident_dict.get("animals"):
+                raw_animals = [a.strip() for a in incident_dict["animals"].split(",") if a.strip()]
+                incident_dict["extracted_animals"] = clean_extracted_animals(raw_animals)
+
+            # Auto-assign tags based on incident content
+            assigned_tags = assign_tags_to_incident(incident_dict)
+            if assigned_tags:
+                incident_dict["tags"] = assigned_tags
+
             # Insert
             await collection.insert_one(incident_dict)
             inserted_count += 1
@@ -459,56 +637,7 @@ async def batch_create_incidents(incidents: List[IncidentCreate]):
         "errors": errors if errors else None
     }
 
-@app.get("/incidents/filters", tags=["Incidents"])
-async def get_incident_filters():
-    """Get dynamic filter options and counts"""
-    collection = get_collection()
-    
-    pipeline = [
-        {
-            "$facet": {
-                "status_counts": [
-                    {"$group": {"_id": "$status", "count": {"$sum": 1}}},
-                    {"$sort": {"count": -1}}
-                ],
-                "location_counts": [
-                    {"$group": {"_id": "$location", "count": {"$sum": 1}}},
-                    {"$sort": {"count": -1}},
-                    {"$limit": 10}
-                ],
-                "species_counts": [
-                    {"$unwind": {"path": "$extracted_animals", "preserveNullAndEmptyArrays": True}},
-                    {"$group": {"_id": "$extracted_animals", "count": {"$sum": 1}}},
-                    {"$match": {"_id": {"$ne": None}}},
-                    {"$sort": {"count": -1}},
-                    {"$limit": 10}
-                ],
-                "year_counts": [
-                    {
-                        "$project": {
-                            "year": {"$substr": ["$date", 0, 4]}
-                        }
-                    },
-                    {"$group": {"_id": "$year", "count": {"$sum": 1}}},
-                    {"$sort": {"_id": -1}}
-                ]
-            }
-        }
-    ]
-    
-    try:
-        result = await collection.aggregate(pipeline).to_list(length=1)
-        stats = result[0] if result else {}
-        
-        return {
-            "status": {item["_id"]: item["count"] for item in stats.get("status_counts", [])},
-            "location": {item["_id"]: item["count"] for item in stats.get("location_counts", [])},
-            "species": {item["_id"]: item["count"] for item in stats.get("species_counts", [])},
-            "years": {item["_id"]: item["count"] for item in stats.get("year_counts", [])}
-        }
-    except Exception as e:
-        print(f"Filter aggregation error: {e}")
-        return {"status": {}, "location": {}, "species": {}, "years": {}}
+
 
 
 @app.post("/excel/parse", tags=["Excel Upload"])
@@ -551,7 +680,18 @@ async def enrich_incidents(data: dict):
         
         # Enrich with AI
         enriched = enrich_multiple_incidents(incidents)
-        
+
+        # Clean extracted_animals for enriched incidents
+        for incident in enriched:
+            if "extracted_animals" in incident:
+                incident["extracted_animals"] = clean_extracted_animals(incident["extracted_animals"])
+
+        # Auto-assign tags to enriched incidents
+        for incident in enriched:
+            assigned_tags = assign_tags_to_incident(incident)
+            if assigned_tags:
+                incident["tags"] = assigned_tags
+
         return {
             "success": True,
             "incidents": enriched,

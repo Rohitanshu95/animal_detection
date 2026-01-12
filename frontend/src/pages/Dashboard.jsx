@@ -42,11 +42,11 @@ const CustomTooltip = ({ active, payload, label }) => {
 const Dashboard = () => {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showAnalysis, setShowAnalysis] = useState(false);
 
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        // In a real scenario, use an environment variable for the base URL
         const response = await axios.get('http://localhost:8000/statistics');
         setStats(response.data);
       } catch (error) {
@@ -77,6 +77,16 @@ const Dashboard = () => {
       resolved: Math.floor(count * 0.7) // Mock resolved data as 70% of total
     }));
 
+  // Reason-wise trend data (using status as proxy for reasons)
+  const reasonTrendData = Object.entries(stats.by_reason || {})
+    .map(([reason, count]) => ({
+      reason,
+      count,
+      percentage: ((count / stats.total_incidents) * 100).toFixed(1)
+    }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5); // Top 5 reasons
+
   const speciesData = (stats.top_animals || []).map((item, index) => ({
     name: item.animal,
     count: item.count,
@@ -84,11 +94,11 @@ const Dashboard = () => {
   }));
 
   const recentActivity = (stats.recent_incidents || []).map(inc => ({
-    id: inc._id, // Use _id from backend
+    id: inc._id || inc.id, // Handle both _id and id
     action: "New Incident Reported",
-    details: `${inc.title || 'Incident'} in ${inc.location || 'Unknown Location'}`,
-    time: new Date(inc.created_at).toLocaleDateString(),
-    type: inc.status === 'Open' ? 'alert' : 'success'
+    details: `${inc.title || inc.description?.substring(0, 50) || 'Incident'} in ${inc.location || 'Unknown Location'}`,
+    time: inc.created_at ? new Date(inc.created_at).toLocaleDateString() : 'Recent',
+    type: (inc.status === 'Open' || inc.status === 'Reported') ? 'alert' : 'success'
   }));
 
   // Calculate totals for cards
@@ -106,13 +116,9 @@ const Dashboard = () => {
           <p className="text-slate-500 mt-1">Real-time intelligence and historical archive overview.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 font-medium text-sm transition-colors shadow-sm">
-            <Calendar className="w-4 h-4" />
-            Last 30 Days
-          </button>
           <button className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 font-medium text-sm transition-all shadow-lg shadow-slate-900/20">
             <Download className="w-4 h-4" />
-            Export Report
+            
           </button>
         </div>
       </div>
@@ -167,6 +173,8 @@ const Dashboard = () => {
               <span className="text-xs text-slate-500">Resolved (Est.)</span>
             </div>
           </div>
+
+
           <div className="flex-1 min-h-[300px]">
              {trendData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
@@ -283,7 +291,10 @@ const Dashboard = () => {
                     AI analysis indicates a 40% increase in incident reports in the northern sector over the last 48 hours. Recommended: Increase patrol frequency.
                  </p>
                </div>
-               <button className="shrink-0 flex items-center gap-2 px-6 py-3 bg-white text-slate-900 rounded-xl font-bold hover:bg-emerald-50 transition-colors shadow-xl">
+               <button
+                 onClick={() => setShowAnalysis(!showAnalysis)}
+                 className="shrink-0 flex items-center gap-2 px-6 py-3 bg-white text-slate-900 rounded-xl font-bold hover:bg-emerald-50 transition-colors shadow-xl"
+               >
                  View Analysis <ArrowUpRight className="w-4 h-4" />
                </button>
             </div>

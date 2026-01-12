@@ -204,7 +204,7 @@ ENTITY_EXTRACTION_PROMPT = """
 You are an AI assistant specialized in wildlife smuggling analysis.
 
 Extract the following information from the text below:
-1. Animal species or wildlife products mentioned
+1. Animal species mentioned (only actual animal species, not products like skin, scales, horn, etc.)
 2. Specific location details (city, state, country)
 3. Key entities (people, organizations, vehicles)
 4. Important keywords

@@ -53,14 +53,25 @@ const Incidents = () => {
       params.append('skip', (overridePage - 1) * LIMIT);
       params.append('sort_order', sortOrder);
       
-      if (filters.status && filters.status.length > 0) params.append('status', filters.status[0]);
-      if (filters.location && filters.location.length > 0) params.append('location', filters.location[0]);
-      if (filters.year) {
-           // Backend handles date_from/date_to. Convert year to range.
-           // Assumes filters.year is "2024", "2023" etc.
-           params.append('date_from', `${filters.year}-01-01`);
-           params.append('date_to', `${filters.year}-12-31`);
+      if (filters.status && filters.status.length > 0) {
+        filters.status.forEach(s => params.append('status', s));
       }
+      if (filters.location && filters.location.length > 0) {
+        filters.location.forEach(l => params.append('location', l));
+      }
+      if (filters.division) {
+        params.append('location', filters.division);
+      }
+      if (filters.species && filters.species.length > 0) {
+        filters.species.forEach(s => params.append('species', s));
+      }
+      if (filters.tags && filters.tags.length > 0) {
+        filters.tags.forEach(t => params.append('tags', t));
+      }
+      if (filters.year) {
+        params.append('year', filters.year);
+      }
+
 
       const response = await axios.get(`http://localhost:8000/incidents?${params.toString()}`);
       
@@ -284,12 +295,7 @@ const Incidents = () => {
               Delete
             </button>
             
-            <button className="px-5 py-2.5 rounded-lg border border-slate-200 text-slate-600 font-semibold hover:bg-white hover:border-slate-300 transition-all">
-              Edit Record
-            </button>
-            <button className="px-5 py-2.5 rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700 shadow-lg shadow-emerald-500/20 transition-all">
-              Generate Report
-            </button>
+      
           </div>
         </div>
       )}

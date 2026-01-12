@@ -1,5 +1,5 @@
-import React from 'react';
-import { Search, Filter, X } from 'lucide-react';
+import React, { useState } from 'react';
+import { Search, Filter, X, Calendar } from 'lucide-react';
 
 const FilterSection = ({ title, children }) => (
   <div className="mb-6">
@@ -53,11 +53,11 @@ const IncidentFilters = ({ filters, setFilters, stats, onClose }) => {
         {stats?.status && Object.entries(stats.status).map(([status, count]) => (
           <label key={status} className="flex items-center justify-between cursor-pointer group select-none">
             <div className="flex items-center gap-2">
-              <input 
-                type="checkbox" 
+              <input
+                type="checkbox"
                 checked={isSelected('status', status)}
                 onChange={() => handleFilterChange('status', status)}
-                className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" 
+                className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
               />
               <span className="text-sm text-slate-600 group-hover:text-slate-900 transition-colors">{status}</span>
             </div>
@@ -66,9 +66,23 @@ const IncidentFilters = ({ filters, setFilters, stats, onClose }) => {
         ))}
       </FilterSection>
 
+      {/* Division Filter */}
+      <FilterSection title="Division">
+        <select
+          onChange={(e) => setFilters(prev => ({ ...prev, division: e.target.value }))}
+          value={filters.division || ''}
+          className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-sm text-slate-700 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+        >
+          <option value="">All Divisions</option>
+          {stats?.location && Object.entries(stats.location).map(([location, count]) => (
+            <option key={location} value={location}>{location} ({count})</option>
+          ))}
+        </select>
+      </FilterSection>
+
       {/* Year Filter */}
       <FilterSection title="Year">
-        <select 
+        <select
           onChange={(e) => setFilters(prev => ({ ...prev, year: e.target.value }))}
           value={filters.year || ''}
           className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-sm text-slate-700 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
@@ -79,6 +93,8 @@ const IncidentFilters = ({ filters, setFilters, stats, onClose }) => {
           ))}
         </select>
       </FilterSection>
+
+
 
       {/* Species Filter */}
       <FilterSection title="Species">
@@ -103,17 +119,35 @@ const IncidentFilters = ({ filters, setFilters, stats, onClose }) => {
           {stats?.location && Object.entries(stats.location).map(([location, count]) => (
             <label key={location} className="flex items-center justify-between cursor-pointer group select-none">
               <div className="flex items-center gap-2">
-                <input 
+                <input
                    type="checkbox"
                    checked={isSelected('location', location)}
                    onChange={() => handleFilterChange('location', location)}
-                   className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" 
+                   className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
                 />
                 <span className="text-sm text-slate-600 group-hover:text-slate-900 transition-colors truncate max-w-[120px]" title={location}>{location}</span>
               </div>
               <span className="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{count}</span>
             </label>
           ))}
+      </FilterSection>
+
+      {/* Tags Filter */}
+      <FilterSection title="Animal Tags">
+        {stats?.tags && Object.entries(stats.tags).map(([tag, count]) => (
+          <label key={tag} className="flex items-center justify-between cursor-pointer group select-none">
+            <div className="flex items-center gap-2">
+              <input
+                 type="checkbox"
+                 checked={isSelected('tags', tag)}
+                 onChange={() => handleFilterChange('tags', tag)}
+                 className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+              />
+              <span className="text-sm text-slate-600 group-hover:text-slate-900 transition-colors truncate max-w-[120px]" title={tag}>{tag}</span>
+            </div>
+            <span className="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{count}</span>
+          </label>
+        ))}
       </FilterSection>
     </div>
   );
