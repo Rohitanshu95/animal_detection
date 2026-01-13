@@ -44,7 +44,8 @@ class IncidentBase(BaseModel):
     description: str = Field(..., description="Detailed description of the incident")
     source: Optional[str] = Field("Unknown", description="Information source or reporting agency")
     status: str = Field(default="Reported", description="Current status of the case")
-    
+    tags: Optional[List[str]] = Field(None, description="Incident tags or categories")
+
     # Optional fields
     suspects: Optional[str] = Field(None, description="Number of suspects or arrests")
     vehicle_info: Optional[str] = Field(None, description="Vehicle information if applicable")

@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 .venv
 
 .env
@@ -7,3 +8,6 @@
 backend/.env
 backend/.env
 backend/.env
+=======
+.venv
+>>>>>>> 700bd35879c92f87152e636b4b67aa43dc4f4107

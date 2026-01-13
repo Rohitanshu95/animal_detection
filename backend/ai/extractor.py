@@ -67,10 +67,9 @@ def fallback_entity_extraction(text: str) -> Dict[str, Any]:
     """
     text_lower = text.lower()
     
-    # Common animal keywords
+    # Common animal keywords (only species, not products)
     animal_keywords = [
         'tiger', 'elephant', 'rhino', 'pangolin', 'turtle', 'tortoise',
-        'ivory', 'skin', 'scales', 'horn', 'bone', 'meat', 'leather',
         'snake', 'lizard', 'frog', 'bird', 'parrot', 'eagle', 'owl',
         'monkey', 'ape', 'bear', 'deer', 'wolf', 'lion', 'cheetah'
     ]
