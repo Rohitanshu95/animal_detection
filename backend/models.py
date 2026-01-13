@@ -1,7 +1,7 @@
 """
 Data models for Wildlife Smuggling Tracker
 Defines the schema for incident documents
-"""
+"""             
 
 from pydantic import BaseModel, Field
 from typing import Optional, List

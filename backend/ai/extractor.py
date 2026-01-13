@@ -5,6 +5,7 @@ Extracts animals, locations, and keywords from text using Google Generative AI
 
 from typing import List, Optional, Dict, Any
 from .llm import generate_text_with_json, ENTITY_EXTRACTION_PROMPT, check_api_key
+from .utils import normalize_animal_name, normalize_location_name
 
 
 async def extract_entities_from_text(text: str) -> Dict[str, Any]:
@@ -38,9 +39,12 @@ async def extract_entities_from_text(text: str) -> Dict[str, Any]:
         entities = json.loads(json_response)
         
         # Ensure expected structure
+        raw_animals = entities.get("animals", [])
+        normalized_animals = [normalize_animal_name(a) for a in raw_animals]
+        
         return {
-            "animals": entities.get("animals", []),
-            "location": entities.get("location", ""),
+            "animals": normalized_animals,
+            "location": normalize_location_name(entities.get("location", "")),
             "entities": entities.get("entities", []),
             "keywords": entities.get("keywords", [])
         }
@@ -109,8 +113,8 @@ def fallback_entity_extraction(text: str) -> Dict[str, Any]:
     keywords = [w.title() for w in words if w not in common_words][:10]
     
     return {
-        "animals": list(set(animals)),  # Remove duplicates
-        "location": location,
+        "animals": [normalize_animal_name(a) for a in list(set(animals))],  # Remove duplicates and normalize
+        "location": normalize_location_name(location),
         "entities": [],  # Not extracting entities in fallback
         "keywords": keywords
     }

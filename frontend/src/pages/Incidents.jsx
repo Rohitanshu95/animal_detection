@@ -4,7 +4,7 @@ import axios from 'axios';
 import IncidentFilters from '../components/incidents/IncidentFilters';
 import IncidentCard from '../components/incidents/IncidentCard';
 import IncidentFormModal from '../components/incidents/IncidentFormModal';
-import { Plus, Search, Loader, X, MapPin, Calendar, Bot, Trash2, ArrowUp, ArrowDown } from 'lucide-react';
+import { Plus, Search, Loader, X, MapPin, Calendar, Bot, Trash2, ArrowUp, ArrowDown, Filter, ChevronLeft } from 'lucide-react';
 
 // Mock data
 const MOCK_INCIDENTS = Array.from({ length: 9 }).map((_, i) => ({
@@ -23,6 +23,7 @@ const Incidents = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState({});
+  const [isFilterCollapsed, setIsFilterCollapsed] = useState(false);
   const [stats, setStats] = useState({});
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
@@ -108,8 +109,23 @@ const Incidents = () => {
   return (
     <div className="flex h-screen -m-8 overflow-hidden">
       {/* Filters Sidebar */}
-      <div className="hidden lg:block w-72 h-full border-r border-slate-200 bg-white shrink-0 z-10">
-        <IncidentFilters filters={filters} setFilters={setFilters} stats={stats} />
+      <div className={`hidden lg:flex flex-col border-r border-slate-200 bg-white shrink-0 z-10 transition-all duration-300 ease-in-out ${isFilterCollapsed ? 'w-14 items-center py-4' : 'w-72'}`}>
+        {isFilterCollapsed ? (
+             <button onClick={() => setIsFilterCollapsed(false)} className="p-3 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors mt-2" title="Show Filters">
+                 <Filter className="w-5 h-5" />
+             </button>
+        ) : (
+             <div className="relative h-full flex flex-col">
+                 <button 
+                     onClick={() => setIsFilterCollapsed(true)} 
+                     className="absolute right-3 top-3 z-20 p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                     title="Collapse Filters"
+                 >
+                     <ChevronLeft className="w-4 h-4" />
+                 </button>
+                 <IncidentFilters filters={filters} setFilters={setFilters} stats={stats} />
+             </div>
+        )}
       </div>
 
       {/* Main Content */}
