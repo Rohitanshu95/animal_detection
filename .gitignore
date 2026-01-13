@@ -1,1 +1,17 @@
+<<<<<<< HEAD
 .venv
+=======
+<<<<<<< HEAD
+.venv
+
+.env
+
+./env
+
+backend/.env
+backend/.env
+backend/.env
+=======
+.venv
+>>>>>>> 700bd35879c92f87152e636b4b67aa43dc4f4107
+>>>>>>> a52769bb923d6ac6c39b79be9b1b9923039b3c05

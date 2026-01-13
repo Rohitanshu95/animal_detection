@@ -1,23 +1,14 @@
 """
-LangGraph Assistant Agent
-Conversational AI agent for wildlife incident analysis - Async Implementation
+Simplified AI Assistant for Wildlife Incident Analysis
+Direct LLM integration without complex LangGraph setup
 """
 
 import os
-from typing import Dict, List, Any, TypedDict, Annotated
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
-from langgraph.graph import StateGraph, START, END
-from langgraph.graph.message import add_messages
-from langgraph.prebuilt import ToolNode, tools_condition
-from langgraph.checkpoint.memory import MemorySaver
-
-class AgentState(TypedDict):
-    """The state of the agent."""
-    messages: Annotated[list[BaseMessage], add_messages]
+from typing import Dict, List, Any
+from .llm import generate_text, generate_text_with_json
 
 class WildlifeAssistant:
-    """Conversational assistant for wildlife incident analysis using LangGraph (Async)"""
+    """Simplified conversational assistant for wildlife incident analysis"""
 
     def __init__(self, db_collection, vector_store_path="vector_store"):
         """
@@ -30,107 +21,82 @@ class WildlifeAssistant:
         self.db_collection = db_collection
         self.vector_store_path = vector_store_path
 
-        # Initialize LLM
-        api_key = os.getenv("GOOGLE_API_KEY")
-        if not api_key:
-             print("Warning: GOOGLE_API_KEY not found. Agent may not function correctly.")
-        
-        self.llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
-            google_api_key=api_key,
-            temperature=0.2
-        )
-
-        # Initialize tools
-        self.tools = self._create_tools()
-        
-        # Bind tools to LLM
-        self.llm_with_tools = self.llm.bind_tools(self.tools)
-
-        # Create graph
-        self.graph = self._create_graph()
-
-    def _create_tools(self) -> List:
-        """Create tools for the agent"""
-        from .tools.db_tools import create_langchain_tools
-        from .tools.vector_tools import create_vector_tools
-
-        # Database tools
-        db_tools = create_langchain_tools(self.db_collection)
-
-        # Vector search tools
-        vector_tools = create_vector_tools(self.vector_store_path)
-
-        # Combine tools
-        return db_tools + vector_tools
-
-    def _create_graph(self):
-        """Create the LangGraph workflow"""
-        
-        # Define the chatbot node
-        async def chatbot(state: AgentState):
-            return {"messages": [await self.llm_with_tools.ainvoke(state["messages"])]}
-
-        # Build graph
-        builder = StateGraph(AgentState)
-        
-        # Add nodes
-        builder.add_node("chatbot", chatbot)
-        builder.add_node("tools", ToolNode(self.tools))
-        
-        # Add edges
-        builder.add_edge(START, "chatbot")
-        builder.add_conditional_edges(
-            "chatbot",
-            tools_condition,
-        )
-        builder.add_edge("tools", "chatbot")
-        
-        # Compile graph with checkpointer
-        memory = MemorySaver()
-        return builder.compile(checkpointer=memory)
-
     async def chat(self, message: str, chat_history: List[Dict] = None, thread_id: str = "default_thread") -> Dict:
         """
-        Process a user message asynchronously
+        Process a user message and generate a response
 
         Args:
             message: User message
             chat_history: Previous conversation history
             thread_id: ID to track conversation state
-            
+
         Returns:
             Response dict with message and metadata
         """
-        config = {"configurable": {"thread_id": thread_id}}
-        
         try:
-            input_message = HumanMessage(content=message)
-            
-            # Use ainvoke for async execution
-            final_state = await self.graph.ainvoke({"messages": [input_message]}, config=config)
-            
-            messages = final_state["messages"]
-            last_message = messages[-1]
-            
-            response_text = last_message.content
-            
-            # Extract tool calls from history for transparency
-            tool_calls = []
-            for msg in messages:
-                if isinstance(msg, AIMessage) and msg.tool_calls:
-                    for tc in msg.tool_calls:
-                        tool_calls.append({
-                            "tool": tc.get("name"),
-                            "input": str(tc.get("args")),
-                            "output": "Executed" 
-                        })
+            # Build context from chat history
+            context = ""
+            if chat_history:
+                context = "\n".join([f"{msg.get('role', 'user')}: {msg.get('content', '')}" for msg in chat_history[-5:]])  # Last 5 messages
+                context = f"Previous conversation:\n{context}\n\n"
+
+            # Check if user is asking for charts/graphs
+            chart_keywords = ['chart', 'graph', 'plot', 'visualize', 'show me', 'display']
+            is_chart_request = any(keyword in message.lower() for keyword in chart_keywords)
+
+            if is_chart_request:
+                # Generate chart data
+                chart_prompt = f"""{context}You are a data visualization assistant for wildlife incident analysis.
+
+User requested a chart/graph: {message}
+
+Generate chart data in JSON format with the following structure:
+{{
+    "chart_type": "bar|line|pie|doughnut",
+    "title": "Chart Title",
+    "data": {{
+        "labels": ["Label1", "Label2", "Label3"],
+        "datasets": [{{
+            "label": "Dataset Label",
+            "data": [10, 20, 30],
+            "backgroundColor": ["#color1", "#color2", "#color3"]
+        }}]
+    }},
+    "description": "Brief description of what this chart shows"
+}}
+
+Make the chart relevant to wildlife incidents. Use realistic sample data if specific data isn't available."""
+
+                chart_json = await generate_text_with_json(chart_prompt, temperature=0.2)
+                import json
+                try:
+                    chart_data = json.loads(chart_json)
+                    response_text = f"I've generated a chart for you: {chart_data.get('description', 'Chart visualization')}"
+
+                    return {
+                        "success": True,
+                        "message": response_text,
+                        "chart_data": chart_data,
+                        "tool_calls": [],
+                        "has_tool_calls": False
+                    }
+                except json.JSONDecodeError:
+                    response_text = "I tried to generate a chart but encountered an issue with the data format. Let me provide a text-based response instead."
+            else:
+                # Regular text response
+                prompt = f"""{context}You are a helpful AI assistant specialized in wildlife smuggling and incident analysis.
+
+Current user question: {message}
+
+Please provide a helpful, accurate response. If the user is asking about wildlife incidents, offer to search the database or provide statistics. Keep your response concise but informative."""
+
+                response_text = await generate_text(prompt, temperature=0.3, max_tokens=1000)
 
             return {
                 "success": True,
                 "message": response_text,
-                "tool_calls": tool_calls,
-                "has_tool_calls": len(tool_calls) > 0
+                "tool_calls": [],
+                "has_tool_calls": False
             }
 
         except Exception as e:

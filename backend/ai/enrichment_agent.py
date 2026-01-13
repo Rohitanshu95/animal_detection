@@ -7,6 +7,7 @@ import json
 import re
 from typing import Dict, List, Optional
 from .llm import get_model, USE_NEW_SDK
+from .filter_utils import clean_extracted_animals
 
 
 class EnrichmentAgent:
@@ -43,6 +44,7 @@ class EnrichmentAgent:
             
             # Merge with original incident
             enriched = {**incident}
+            raw_animals = extracted_data.get('animal_species', [])
             enriched.update({
                 'animals': extracted_data.get('animals', ''),
                 'quantity': extracted_data.get('quantity'),
@@ -51,7 +53,7 @@ class EnrichmentAgent:
                 'vehicle_info': extracted_data.get('vehicle_info'),
                 'estimated_value': extracted_data.get('estimated_value'),
                 'status': extracted_data.get('status', 'Reported'),
-                'extracted_animals': extracted_data.get('animal_species', []),
+                'extracted_animals': clean_extracted_animals(raw_animals),
                 'keywords': extracted_data.get('keywords', []),
                 'ai_summary': extracted_data.get('summary', ''),
                 'ai_enriched': True
@@ -94,7 +96,7 @@ LOCATION: {location}
 Extract the following information and return as JSON:
 {{
   "animals": "Main animal/wildlife product type (e.g., 'Elephant tusks', 'Pangolin scales', 'Tiger skins')",
-  "animal_species": ["List", "of", "specific", "species"],
+  "animal_species": (e.g., ['Elephant', 'Pangolin', 'Tiger']),
   "quantity": "Quantity with units (e.g., '150 kg', '3 tusks', '25 animals')",
   "source": "Reporting agency or information source (e.g., 'Wildlife Crime Control Bureau', 'Customs', 'Park Rangers')",
   "suspects": "Number of suspects or arrests (e.g., '3 arrested', '2 suspects identified')",
@@ -109,7 +111,8 @@ Rules:
 - If information is not mentioned, use null for that field
 - Be precise and extract only what is explicitly stated
 - For status, infer from context (arrests = 'Arrest Made', ongoing investigation = 'Under Investigation', etc.)
-- Animal species should be scientific or common names
+- Animal species should be ONLY actual animal species names (scientific or common names), NOT products like skin, scales, horn, etc.
+- Do not include wildlife products in the animal_species array - only species names
 - Keep summaries under 100 characters
 
 Return ONLY valid JSON, no additional text.
@@ -192,8 +195,9 @@ def extract_animals_from_text(text: str) -> List[str]:
     Used by existing extractor.py
     """
     agent = EnrichmentAgent()
-    prompt = f"""Extract ONLY the animal species or wildlife product names from this text as a JSON array.
-    
+    prompt = f"""Extract ONLY actual animal species names from this text as a JSON array.
+Do NOT include wildlife products like skin, scales, horn, tusks, etc.
+
 Text: {text}
 
 Return format: ["species1", "species2", ...]
@@ -205,7 +209,9 @@ Return ONLY the JSON array, no additional text."""
         # Extract JSON array
         match = re.search(r'\[.*\]', response, re.DOTALL)
         if match:
-            return json.loads(match.group(0))
+            raw_animals = json.loads(match.group(0))
+            # Clean the extracted animals
+            return clean_extracted_animals(raw_animals)
         return []
     except:
         return []
