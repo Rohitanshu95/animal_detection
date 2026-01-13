@@ -22,6 +22,7 @@ const Incidents = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [filters, setFilters] = useState({});
   const [isFilterCollapsed, setIsFilterCollapsed] = useState(false);
   const [stats, setStats] = useState({});
@@ -30,11 +31,18 @@ const Incidents = () => {
   const [sortOrder, setSortOrder] = useState('desc'); // 'desc' = Newest First, 'asc' = Oldest First
   const LIMIT = 12;
 
+  // Debounce search query
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearchQuery(searchQuery), 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
   // Fetch stats for sidebar
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const res = await axios.get('http://localhost:8000/incidents/filters');
+        const res = await axios.get('/api/incidents/filters');
+        // console.log("Fetched stats:", res.data);
         setStats(res.data);
       } catch (err) {
         console.error("Failed to fetch stats", err);
@@ -48,7 +56,7 @@ const Incidents = () => {
     setIsLoading(true);
     try {
       const params = new URLSearchParams();
-      if (searchQuery) params.append('query', searchQuery);
+      if (debouncedSearchQuery) params.append('query', debouncedSearchQuery);
       
       params.append('limit', LIMIT);
       params.append('skip', (overridePage - 1) * LIMIT);
@@ -59,9 +67,6 @@ const Incidents = () => {
       }
       if (filters.location && filters.location.length > 0) {
         filters.location.forEach(l => params.append('location', l));
-      }
-      if (filters.division) {
-        params.append('location', filters.division);
       }
       if (filters.species && filters.species.length > 0) {
         filters.species.forEach(s => params.append('species', s));
@@ -74,7 +79,7 @@ const Incidents = () => {
       }
 
 
-      const response = await axios.get(`http://localhost:8000/incidents?${params.toString()}`);
+      const response = await axios.get(`/api/incidents?${params.toString()}`);
       
       if (overridePage === 1) {
         setIncidents(response.data);
@@ -94,7 +99,7 @@ const Incidents = () => {
     // Reset page when filters/search/sort change
     setPage(1);
     fetchIncidents(1);
-  }, [searchQuery, filters, sortOrder]);
+  }, [debouncedSearchQuery, filters, sortOrder]);
 
   const handleLoadMore = () => {
      setPage(p => {
@@ -296,7 +301,7 @@ const Incidents = () => {
               onClick={async () => {
                 if(window.confirm('Are you sure you want to delete this incident?')) {
                   try {
-                    await axios.delete(`http://localhost:8000/incidents/${selectedIncident._id}`);
+                    await axios.delete(`/api/incidents/${selectedIncident._id}`);
                     fetchIncidents();
                     setSelectedIncident(null);
                   } catch (e) {

@@ -26,18 +26,37 @@ def extract_species_from_compound_name(compound_name: str) -> str:
         'bone', 'bones', 'meat', 'fur', 'pelt', 'pelts', 'leather',
         'ivory', 'claw', 'claws', 'tail', 'tails', 'feather', 'feathers',
         'egg', 'eggs', 'shell', 'shells', 'bile', 'gallbladder',
-        'organ', 'organs', 'blood', 'fat', 'oil'
+        'organ', 'organs', 'blood', 'fat', 'oil', 'powder', 'powdered',
+        'extract', 'extracts', 'medicine', 'medicinal', 'traditional',
+        'carving', 'carvings', 'jewelry', 'jewellery', 'artifact', 'artifacts',
+        'decorative', 'decoration', 'trophy', 'trophies', 'mount', 'mounted'
     ]
 
-    # Split on product indicators and take the first part as species
+    # Split on product indicators and take the species part
     for indicator in product_indicators:
         if f' {indicator}' in compound_lower or f'{indicator} ' in compound_lower:
-            # Split and take the species part (usually the first word)
-            parts = compound_lower.split()
-            if len(parts) >= 2:
-                # Take the first part as the species name
-                species_candidate = parts[0]
-                # Validate it's a reasonable species name (not too short, not generic)
+            # Split on the indicator and take the part before it
+            if f' {indicator}' in compound_lower:
+                species_part = compound_lower.split(f' {indicator}')[0]
+            else:
+                species_part = compound_lower.split(f'{indicator} ')[0]
+
+            # Handle multi-word species names (e.g., "asian elephant skin")
+            words = species_part.split()
+            if len(words) >= 1:
+                # Try to find species name - could be 1-3 words
+                for i in range(len(words), 0, -1):
+                    candidate = ' '.join(words[:i])
+                    if len(candidate) > 2 and candidate not in ['animal', 'wildlife', 'creature', 'wild', 'exotic']:
+                        # Check if it looks like a species name
+                        if any(word in candidate.lower() for word in ['tiger', 'elephant', 'pangolin', 'turtle', 'snake', 'bird', 'bear', 'deer', 'lion', 'cheetah', 'jaguar', 'crocodile', 'shark', 'whale', 'dolphin', 'seal', 'otter', 'monkey', 'ape', 'eagle', 'owl', 'parrot']):
+                            return candidate.title()
+                        # For unknown species, if it has multiple words and ends with common animal words
+                        if i > 1 and any(candidate.lower().endswith(word) for word in ['tiger', 'elephant', 'pangolin', 'turtle', 'snake', 'bird', 'bear', 'deer', 'lion']):
+                            return candidate.title()
+
+                # Fallback to first word if no match
+                species_candidate = words[0]
                 if len(species_candidate) > 2 and species_candidate not in ['animal', 'wildlife', 'creature']:
                     return species_candidate.title()
 
@@ -58,18 +77,63 @@ def filter_species_from_products(animals: List[str]) -> List[str]:
     if not animals:
         return []
 
-    # Common animal species (to preserve legitimate species)
+    # Common animal species (to preserve legitimate species) - expanded list
     known_species = {
+        # Big cats
         'tiger', 'tigers', 'leopard', 'leopards', 'panther', 'panthers',
-        'elephant', 'elephants', 'rhino', 'rhinos', 'rhinoceros',
-        'pangolin', 'pangolins', 'turtle', 'turtles', 'tortoise', 'tortoises',
-        'snake', 'snakes', 'lizard', 'lizards', 'frog', 'frogs',
-        'bird', 'birds', 'parrot', 'parrots', 'eagle', 'eagles',
-        'owl', 'owls', 'monkey', 'monkeys', 'ape', 'apes',
-        'bear', 'bears', 'deer', 'wolf', 'wolves', 'lion', 'lions',
-        'cheetah', 'cheetahs', 'jaguar', 'jaguars', 'crocodile', 'crocodiles',
-        'alligator', 'alligators', 'shark', 'sharks', 'whale', 'whales',
-        'dolphin', 'dolphins', 'seal', 'seals', 'otter', 'otters'
+        'lion', 'lions', 'cheetah', 'cheetahs', 'jaguar', 'jaguars',
+        'snow leopard', 'snow leopards', 'clouded leopard', 'clouded leopards',
+
+        # Elephants and rhinos
+        'elephant', 'elephants', 'asian elephant', 'african elephant',
+        'rhino', 'rhinos', 'rhinoceros', 'indian rhino', 'javan rhino', 'sumatran rhino',
+
+        # Pangolins and armadillos
+        'pangolin', 'pangolins', 'indian pangolin', 'chinese pangolin', 'sunda pangolin',
+
+        # Reptiles
+        'turtle', 'turtles', 'tortoise', 'tortoises', 'sea turtle', 'marine turtle',
+        'snake', 'snakes', 'cobra', 'king cobra', 'python', 'anaconda',
+        'lizard', 'lizards', 'monitor lizard', 'iguana', 'gecko',
+        'crocodile', 'crocodiles', 'alligator', 'alligators', 'gharial',
+
+        # Amphibians
+        'frog', 'frogs', 'toad', 'toads',
+
+        # Birds
+        'bird', 'birds', 'parrot', 'parrots', 'cockatoo', 'macaw',
+        'eagle', 'eagles', 'hawk', 'falcon', 'owl', 'owls',
+        'peacock', 'pheasant', 'quail', 'pigeon', 'dove',
+
+        # Primates
+        'monkey', 'monkeys', 'ape', 'apes', 'chimpanzee', 'gorilla',
+        'orangutan', 'gibbon', 'langur', 'macaque',
+
+        # Bears
+        'bear', 'bears', 'sloth bear', 'sun bear', 'grizzly bear', 'polar bear',
+
+        # Deer and antelopes
+        'deer', 'stag', 'antelope', 'gazelle', 'chital', 'sambar',
+
+        # Canines
+        'wolf', 'wolves', 'dhole', 'fox', 'jackal',
+
+        # Marine mammals
+        'whale', 'whales', 'dolphin', 'dolphins', 'porpoise',
+        'seal', 'seals', 'sea lion', 'walrus',
+
+        # Sharks and rays
+        'shark', 'sharks', 'ray', 'rays', 'sawfish',
+
+        # Mustelids
+        'otter', 'otters', 'marten', 'badger', 'wolverine',
+
+        # Other mammals
+        'hippopotamus', 'giraffe', 'zebra', 'buffalo', 'bison',
+        'porcupine', 'hedgehog', 'squirrel', 'bat', 'flying fox',
+
+        # Insects and others
+        'butterfly', 'beetle', 'scorpion', 'spider'
     }
 
     filtered_animals = []

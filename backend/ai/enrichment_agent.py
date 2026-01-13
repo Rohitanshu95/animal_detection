@@ -95,24 +95,31 @@ LOCATION: {location}
 
 Extract the following information and return as JSON:
 {{
-  "animals": "Main animal/wildlife product type (e.g., 'Elephant tusks', 'Pangolin scales', 'Tiger skins')",
-  "animal_species": (e.g., ['Elephant', 'Pangolin', 'Tiger']),
-  "quantity": "Quantity with units (e.g., '150 kg', '3 tusks', '25 animals')",
-  "source": "Reporting agency or information source (e.g., 'Wildlife Crime Control Bureau', 'Customs', 'Park Rangers')",
-  "suspects": "Number of suspects or arrests (e.g., '3 arrested', '2 suspects identified')",
-  "vehicle_info": "Vehicle information if mentioned (e.g., 'White truck', 'Cargo ship')",
-  "estimated_value": "Monetary value if mentioned (with currency)",
-  "status": "Case status - one of: 'Reported', 'Under Investigation', 'Arrest Made', 'Case Closed', 'Ongoing'",
-  "keywords": ["important", "keywords", "from", "description"],
-  "summary": "Brief 1-sentence summary of the incident"
+ "animals": "Main animal/wildlife product type (e.g., 'Elephant tusks', 'Pangolin scales', 'Tiger skins')",
+ "animal_species": ["ONLY actual animal species names here - no products"],
+ "quantity": "Quantity with units (e.g., '150 kg', '3 tusks', '25 animals')",
+ "source": "Reporting agency or information source (e.g., 'Wildlife Crime Control Bureau', 'Customs', 'Park Rangers')",
+ "suspects": "Number of suspects or arrests (e.g., '3 arrested', '2 suspects identified')",
+ "vehicle_info": "Vehicle information if mentioned (e.g., 'White truck', 'Cargo ship')",
+ "estimated_value": "Monetary value if mentioned (with currency)",
+ "status": "Case status - one of: 'Reported', 'Under Investigation', 'Arrest Made', 'Case Closed', 'Ongoing'",
+ "keywords": ["important", "keywords", "from", "description"],
+ "summary": "Brief 1-sentence summary of the incident"
 }}
 
-Rules:
+CRITICAL RULES FOR ANIMAL SPECIES EXTRACTION:
+- animal_species MUST contain ONLY actual animal species names (scientific or common names)
+- NEVER include wildlife products like: skin, scales, horn, tusks, teeth, bones, meat, fur, leather, ivory, claws, tails, feathers, eggs, shells, bile, organs, blood, fat, oil, powder, extract, medicine, carvings, jewelry
+- Examples of CORRECT animal_species: ["Tiger", "Elephant", "Pangolin", "Indian Cobra", "Sea Turtle"]
+- Examples of INCORRECT animal_species: ["tiger skin", "elephant tusks", "pangolin scales", "cobra venom", "turtle shells"]
+- If the description mentions "tiger skin", animal_species should be ["Tiger"] NOT ["tiger skin"]
+- If multiple species are mentioned, list them all: ["Tiger", "Leopard", "Elephant"]
+- Use proper capitalization for species names
+
+Other Rules:
 - If information is not mentioned, use null for that field
 - Be precise and extract only what is explicitly stated
 - For status, infer from context (arrests = 'Arrest Made', ongoing investigation = 'Under Investigation', etc.)
-- Animal species should be ONLY actual animal species names (scientific or common names), NOT products like skin, scales, horn, etc.
-- Do not include wildlife products in the animal_species array - only species names
 - Keep summaries under 100 characters
 
 Return ONLY valid JSON, no additional text.

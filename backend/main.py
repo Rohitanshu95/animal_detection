@@ -51,7 +51,7 @@ async def startup_event():
     """Initialize database connection on startup"""
     await connect_to_mongo()
     # Optionally insert sample data
-    # await insert_sample_data()
+    await insert_sample_data()
 
 
 @app.on_event("shutdown")
@@ -188,19 +188,25 @@ async def get_incidents(
     # Filters
     if status:
         conditions.append({"status": {"$in": status}})
-        
+
     if species:
-        conditions.append({
-            "$or": [{"extracted_animals": {"$regex": s, "$options": "i"}} for s in species]
-        })
-        
+        # Normalize species to title case for exact matching on extracted_animals array
+        normalized_species = [s.strip().title() for s in species]
+        conditions.append({"extracted_animals": {"$in": normalized_species}})
+
     if location:
-        conditions.append({"location": {"$in": location}})
+        # Support partial matching with case-insensitive regex
+        conditions.append({
+            "$or": [{"location": {"$regex": loc, "$options": "i"}} for loc in location]
+        })
     if tags:
         conditions.append({"tags": {"$in": tags}})
-        
+
     if year:
-        conditions.append({"date": {"$regex": f"^{year}", "$options": "i"}})
+        # Use proper date range queries for year filtering
+        start_date = f"{year}-01-01"
+        end_date = f"{int(year) + 1}-01-01"
+        conditions.append({"date": {"$gte": start_date, "$lt": end_date}})
 
     if date_from or date_to:
         date_query = {}
@@ -243,21 +249,21 @@ async def get_incident_filters():
                 "location_counts": [
                     {"$group": {"_id": "$location", "count": {"$sum": 1}}},
                     {"$sort": {"count": -1}},
-                    {"$limit": 10}
+                    {"$limit": 50}
                 ],
                 "species_counts": [
                     {"$unwind": {"path": "$extracted_animals", "preserveNullAndEmptyArrays": True}},
                     {"$group": {"_id": "$extracted_animals", "count": {"$sum": 1}}},
                     {"$match": {"_id": {"$ne": None}}},
                     {"$sort": {"count": -1}},
-                    {"$limit": 10}
+                    {"$limit": 50}
                 ],
                 "tags_counts": [
                     {"$unwind": {"path": "$tags", "preserveNullAndEmptyArrays": True}},
                     {"$group": {"_id": "$tags", "count": {"$sum": 1}}},
                     {"$match": {"_id": {"$ne": None}}},
                     {"$sort": {"count": -1}},
-                    {"$limit": 10}
+                    {"$limit": 50}
                 ],
                 "year_counts": [
                     {
@@ -301,6 +307,116 @@ async def get_incident_filters():
         }
     except Exception as e:
         print(f"Filter aggregation error: {e}")
+        return {"status": {}, "location": {}, "species": {}, "tags": {}, "years": {}}
+
+
+@app.get("/incidents/filters/dynamic", tags=["Incidents"])
+async def get_dynamic_incident_filters(
+    status: Optional[List[str]] = Query(None),
+    species: Optional[List[str]] = Query(None),
+    location: Optional[List[str]] = Query(None),
+    tags: Optional[List[str]] = Query(None),
+    year: Optional[str] = None
+):
+    """Get dynamic filter options and counts based on current filter selections"""
+    collection = get_collection()
+
+    # Build match conditions from current filters
+    match_conditions = []
+
+    if status:
+        match_conditions.append({"status": {"$in": status}})
+
+    if species:
+        normalized_species = [s.strip().title() for s in species]
+        match_conditions.append({"extracted_animals": {"$in": normalized_species}})
+
+    if location:
+        match_conditions.append({
+            "$or": [{"location": {"$regex": loc, "$options": "i"}} for loc in location]
+        })
+
+    if tags:
+        match_conditions.append({"tags": {"$in": tags}})
+
+    if year:
+        start_date = f"{year}-01-01"
+        end_date = f"{int(year) + 1}-01-01"
+        match_conditions.append({"date": {"$gte": start_date, "$lt": end_date}})
+
+    # Base match stage
+    match_stage = {"$match": {"$and": match_conditions}} if match_conditions else {}
+
+    pipeline = [
+        match_stage,
+        {
+            "$facet": {
+                "status_counts": [
+                    {"$group": {"_id": "$status", "count": {"$sum": 1}}},
+                    {"$sort": {"count": -1}},
+                    {"$limit": 50}
+                ],
+                "location_counts": [
+                    {"$group": {"_id": "$location", "count": {"$sum": 1}}},
+                    {"$sort": {"count": -1}},
+                    {"$limit": 50}
+                ],
+                "species_counts": [
+                    {"$unwind": {"path": "$extracted_animals", "preserveNullAndEmptyArrays": True}},
+                    {"$group": {"_id": "$extracted_animals", "count": {"$sum": 1}}},
+                    {"$match": {"_id": {"$ne": None}}},
+                    {"$sort": {"count": -1}},
+                    {"$limit": 50}
+                ],
+                "tags_counts": [
+                    {"$unwind": {"path": "$tags", "preserveNullAndEmptyArrays": True}},
+                    {"$group": {"_id": "$tags", "count": {"$sum": 1}}},
+                    {"$match": {"_id": {"$ne": None}}},
+                    {"$sort": {"count": -1}},
+                    {"$limit": 50}
+                ],
+                "year_counts": [
+                    {
+                        "$project": {
+                            "year": {"$substr": ["$date", 0, 4]}
+                        }
+                    },
+                    {"$group": {"_id": "$year", "count": {"$sum": 1}}},
+                    {"$sort": {"_id": -1}}
+                ]
+            }
+        }
+    ]
+
+    # Predefined tags for wildlife incidents
+    predefined_tags = [
+        "Animal Hunting", "Animal Killing", "Poaching", "Animal Smuggling",
+        "Illegal Wildlife Trade", "Animal Capture", "Animal Injury/Cruelty",
+        "Seizure of Animal Products", "Illegal Weapon Usage", "Forest Law Violation",
+        "Arrest/Legal Action", "Rescue and Rehabilitation"
+    ]
+
+    try:
+        result = await collection.aggregate(pipeline).to_list(length=1)
+        stats = result[0] if result else {}
+
+        # Get actual tag counts from database
+        actual_tags = {item["_id"]: item["count"] for item in stats.get("tags_counts", [])}
+
+        # Merge predefined tags with actual counts
+        tags_stats = {}
+        for tag in predefined_tags:
+            tags_stats[tag] = actual_tags.get(tag, 0)
+
+        return {
+            "status": {item["_id"]: item["count"] for item in stats.get("status_counts", [])},
+            "location": {item["_id"]: item["count"] for item in stats.get("location_counts", [])},
+            "species": {item["_id"]: item["count"] for item in stats.get("species_counts", [])},
+            "tags": tags_stats,
+            "years": {item["_id"]: item["count"] for item in stats.get("year_counts", [])}
+        }
+    except Exception as e:
+        print(f"Dynamic filter aggregation error: {e}")
         return {"status": {}, "location": {}, "species": {}, "tags": {}, "years": {}}
 
 

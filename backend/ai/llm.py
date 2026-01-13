@@ -13,32 +13,18 @@ load_dotenv()
 # Configure Google AI
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
-# Try to import the new package, fall back to old one if needed
+# Configure Google AI
 try:
-    from google import genai
-    from google.genai import types
-    USE_NEW_SDK = True
-    print("✅ Using new google-genai package")
-except ImportError:
-    try:
-        import google.generativeai as genai
-        USE_NEW_SDK = False
-        print("⚠️ Using deprecated google.generativeai package - please upgrade to google-genai")
-    except ImportError:
-        genai = None
-        USE_NEW_SDK = False
-        print("⚠️ Google AI package not installed")
-
-if GOOGLE_API_KEY and genai:
-    if USE_NEW_SDK:
-        client = genai.Client(api_key=GOOGLE_API_KEY)
-    else:
+    import google.generativeai as genai
+    if GOOGLE_API_KEY:
         genai.configure(api_key=GOOGLE_API_KEY)
-    print("✅ Google Generative AI configured")
-else:
-    client = None
-    if not GOOGLE_API_KEY:
-        print("⚠️ Warning: GOOGLE_API_KEY not found in environment variables")
+        print("Google Generative AI configured")
+    else:
+        print("Warning: GOOGLE_API_KEY not found in environment variables")
+        genai = None
+except ImportError:
+    genai = None
+    print("Warning: Google AI package not installed")
 
 # Model configuration
 MODEL_NAME = "gemini-2.5-flash"  # or "gemini-1.5-pro" for better quality
@@ -47,21 +33,18 @@ MODEL_NAME = "gemini-2.5-flash"  # or "gemini-1.5-pro" for better quality
 def get_model(model_name: str = MODEL_NAME):
     """
     Get configured Gemini model instance
-    
+
     Args:
         model_name: Name of the model to use
-        
+
     Returns:
         Configured model instance
     """
-    if not GOOGLE_API_KEY:
-        raise ValueError("GOOGLE_API_KEY not configured")
-    
-    if USE_NEW_SDK:
-        return model_name  # With new SDK, we use model name directly
-    else:
-        model = genai.GenerativeModel(model_name)
-        return model
+    if not GOOGLE_API_KEY or not genai:
+        raise ValueError("GOOGLE_API_KEY not configured or genai not available")
+
+    model = genai.GenerativeModel(model_name)
+    return model
 
 
 async def generate_text(
@@ -72,43 +55,30 @@ async def generate_text(
 ) -> str:
     """
     Generate text using Gemini model
-    
+
     Args:
         prompt: Input prompt
         model_name: Model to use
         temperature: Sampling temperature (0.0 to 1.0)
         max_tokens: Maximum tokens to generate
-        
+
     Returns:
         Generated text
     """
     try:
-        if USE_NEW_SDK and client:
-            # New SDK approach
-            response = client.models.generate_content(
-                model=model_name,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=temperature,
-                    max_output_tokens=max_tokens,
-                )
-            )
-            return response.text
-        else:
-            # Old SDK approach
-            model = get_model(model_name)
-            generation_config = genai.GenerationConfig(
-                temperature=temperature,
-                max_output_tokens=max_tokens,
-            )
-            response = model.generate_content(
-                prompt,
-                generation_config=generation_config
-            )
-            return response.text
-    
+        model = get_model(model_name)
+        generation_config = genai.GenerationConfig(
+            temperature=temperature,
+            max_output_tokens=max_tokens,
+        )
+        response = model.generate_content(
+            prompt,
+            generation_config=generation_config
+        )
+        return response.text
+
     except Exception as e:
-        print(f"❌ Error generating text: {e}")
+        print(f"Error generating text: {e}")
         raise
 
 
@@ -120,42 +90,29 @@ async def generate_text_with_json(
     """
     Generate text with JSON output format
     Useful for structured data extraction
-    
+
     Args:
         prompt: Input prompt (should specify JSON format)
         model_name: Model to use
         temperature: Lower temperature for more consistent JSON
-        
+
     Returns:
         Generated JSON string
     """
     try:
-        if USE_NEW_SDK and client:
-            # New SDK approach
-            response = client.models.generate_content(
-                model=model_name,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=temperature,
-                    response_mime_type="application/json"
-                )
-            )
-            return response.text
-        else:
-            # Old SDK approach
-            model = get_model(model_name)
-            generation_config = genai.GenerationConfig(
-                temperature=temperature,
-                response_mime_type="application/json"
-            )
-            response = model.generate_content(
-                prompt,
-                generation_config=generation_config
-            )
-            return response.text
-    
+        model = get_model(model_name)
+        generation_config = genai.GenerationConfig(
+            temperature=temperature,
+            response_mime_type="application/json"
+        )
+        response = model.generate_content(
+            prompt,
+            generation_config=generation_config
+        )
+        return response.text
+
     except Exception as e:
-        print(f"❌ Error generating JSON: {e}")
+        print(f"Error generating JSON: {e}")
         raise
 
 

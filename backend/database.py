@@ -32,13 +32,13 @@ async def connect_to_mongo():
         
         # Test connection
         await client.admin.command('ping')
-        print(f"✅ Connected to MongoDB: {DATABASE_NAME}")
-        
+        print(f"Connected to MongoDB: {DATABASE_NAME}")
+
         # Create indexes for better search performance
         await create_indexes()
-        
+
     except Exception as e:
-        print(f"❌ Failed to connect to MongoDB: {e}")
+        print(f"Failed to connect to MongoDB: {e}")
         raise
 
 
@@ -49,7 +49,7 @@ async def close_mongo_connection():
     global client
     if client:
         client.close()
-        print("🔌 Closed MongoDB connection")
+        print("Closed MongoDB connection")
 
 
 async def create_indexes():
@@ -57,9 +57,9 @@ async def create_indexes():
     Create database indexes for optimized queries
     """
     global database
-    
+
     incidents_collection = database[COLLECTION_NAME]
-    
+
     # Text index for search
     await incidents_collection.create_index([
         ("description", "text"),
@@ -67,14 +67,22 @@ async def create_indexes():
         ("animals", "text"),
         ("source", "text")
     ])
-    
+
     # Single field indexes
     await incidents_collection.create_index("date")
     await incidents_collection.create_index("status")
     await incidents_collection.create_index("location")
     await incidents_collection.create_index("created_at")
-    
-    print("✅ Created database indexes")
+
+    # Array indexes for filtered fields
+    await incidents_collection.create_index("extracted_animals")  # Array index for species filtering
+    await incidents_collection.create_index("tags")  # Array index for tag filtering
+
+    # Compound indexes for common filter combinations
+    await incidents_collection.create_index([("status", 1), ("created_at", -1)])  # For status + date filtering
+    await incidents_collection.create_index([("location", 1), ("created_at", -1)])  # For location-based queries
+
+    print("Created database indexes")
 
 
 def get_database():
@@ -116,7 +124,7 @@ async def insert_sample_data():
     # Check if collection is empty
     count = await incidents_collection.count_documents({})
     if count > 0:
-        print(f"ℹ️  Database already has {count} records")
+        print(f"Database already has {count} records")
         return
     
     sample_incidents = [
@@ -182,7 +190,7 @@ async def insert_sample_data():
     ]
     
     result = await incidents_collection.insert_many(sample_incidents)
-    print(f"✅ Inserted {len(result.inserted_ids)} sample records")
+    print(f"Inserted {len(result.inserted_ids)} sample records")
 
 
 # Database health check
