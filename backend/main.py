@@ -190,7 +190,9 @@ async def get_incidents(
         conditions.append({"status": {"$in": status}})
         
     if species:
-        conditions.append({"extracted_animals": {"$in": species}})
+        conditions.append({
+            "$or": [{"extracted_animals": {"$regex": s, "$options": "i"}} for s in species]
+        })
         
     if location:
         conditions.append({"location": {"$in": location}})
