@@ -41,13 +41,41 @@ const CustomTooltip = ({ active, payload, label }) => {
 
 const Dashboard = () => {
   const [stats, setStats] = useState(null);
+  const [filterOptions, setFilterOptions] = useState({
+    divisions: {},
+    species: {},
+    years: {}
+  });
   const [loading, setLoading] = useState(true);
   const [showAnalysis, setShowAnalysis] = useState(false);
+  const [filters, setFilters] = useState({
+    division: '',
+    species: '',
+    year: ''
+  });
 
   useEffect(() => {
+    const fetchFilterOptions = async () => {
+      try {
+        const response = await axios.get('/api/incidents/filters');
+        setFilterOptions({
+          divisions: response.data.location || {},
+          species: response.data.species || {},
+          years: response.data.years || {}
+        });
+      } catch (error) {
+        console.error("Failed to fetch filter options:", error);
+      }
+    };
+
     const fetchStats = async () => {
       try {
-        const response = await axios.get('/api/statistics');
+        const params = new URLSearchParams();
+        if (filters.division) params.append('division', filters.division);
+        if (filters.species) params.append('species', filters.species);
+        if (filters.year) params.append('year', filters.year);
+
+        const response = await axios.get(`/api/statistics?${params.toString()}`);
         setStats(response.data);
       } catch (error) {
         console.error("Failed to fetch statistics:", error);
@@ -55,8 +83,10 @@ const Dashboard = () => {
         setLoading(false);
       }
     };
+
+    fetchFilterOptions();
     fetchStats();
-  }, []);
+  }, [filters]);
 
   if (loading) {
     return (
@@ -87,11 +117,13 @@ const Dashboard = () => {
     .sort((a, b) => b.count - a.count)
     .slice(0, 5); // Top 5 reasons
 
-  const speciesData = (stats.top_animals || []).map((item, index) => ({
-    name: item.animal,
-    count: item.count,
-    color: COLORS[index % COLORS.length]
-  }));
+  const speciesData = (stats.top_animals || [])
+    .sort((a, b) => b.count - a.count) // Sort by count descending to ensure accuracy
+    .map((item, index) => ({
+      name: item.animal,
+      count: item.count,
+      color: COLORS[index % COLORS.length]
+    }));
 
   const recentActivity = (stats.recent_incidents || []).map(inc => ({
     id: inc._id || inc.id, // Handle both _id and id
@@ -101,11 +133,16 @@ const Dashboard = () => {
     type: (inc.status === 'Open' || inc.status === 'Reported') ? 'alert' : 'success'
   }));
 
+
+
   // Calculate totals for cards
   const totalIncidents = stats.total_incidents || 0;
   const uniqueSpecies = stats.top_animals?.length || 0;
   const recentCount = recentActivity.length;
   const openCases = stats.by_status?.['Open'] || 0;
+
+  // Sort top_animals by count descending to ensure most targeted species is accurate
+  const sortedTopAnimals = (stats.top_animals || []).sort((a, b) => b.count - a.count);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
@@ -116,9 +153,42 @@ const Dashboard = () => {
           <p className="text-slate-500 mt-1">Real-time intelligence and historical archive overview.</p>
         </div>
         <div className="flex items-center gap-3">
+          {/* Filter Controls */}
+          <div className="flex items-center gap-2">
+            <select
+              value={filters.division}
+              onChange={(e) => setFilters(prev => ({ ...prev, division: e.target.value }))}
+              className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+            >
+              <option value="">All Divisions</option>
+              {Object.keys(filterOptions.divisions).map(division => (
+                <option key={division} value={division}>{division}</option>
+              ))}
+            </select>
+            <select
+              value={filters.species}
+              onChange={(e) => setFilters(prev => ({ ...prev, species: e.target.value }))}
+              className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+            >
+              <option value="">All Species</option>
+              {Object.keys(filterOptions.species).map(species => (
+                <option key={species} value={species}>{species}</option>
+              ))}
+            </select>
+            <select
+              value={filters.year}
+              onChange={(e) => setFilters(prev => ({ ...prev, year: e.target.value }))}
+              className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+            >
+              <option value="">All Years</option>
+              {Object.keys(filterOptions.years).sort().reverse().map(year => (
+                <option key={year} value={year}>{year}</option>
+              ))}
+            </select>
+          </div>
           <button className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 font-medium text-sm transition-all shadow-lg shadow-slate-900/20">
             <Download className="w-4 h-4" />
-            
+
           </button>
         </div>
       </div>
@@ -147,11 +217,11 @@ const Dashboard = () => {
           icon={Activity} 
           colorClass="bg-blue-50 text-blue-600"
         />
-        <StatCard 
-          title="Open Cases" 
-          value={openCases} 
-          label="Pending investigation" 
-          icon={AlertTriangle} 
+        <StatCard
+          title="🟢 Most Targeted Species"
+          value={sortedTopAnimals[0]?.animal || "No data"}
+          label={`${sortedTopAnimals[0]?.count || 0} incidents`}
+          icon={AlertTriangle}
           colorClass="bg-rose-50 text-rose-600"
         />
       </div>
@@ -175,7 +245,7 @@ const Dashboard = () => {
           </div>
 
 
-          <div className="flex-1 min-h-[300px]">
+          <div style={{ height: '300px', minHeight: '300px' }}>
              {trendData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
@@ -214,7 +284,7 @@ const Dashboard = () => {
                recentActivity.map((item) => (
                 <div key={item.id} className="flex gap-4 group">
                    <div className={`mt-1 w-2 h-2 rounded-full shrink-0 ${
-                     item.type === 'alert' ? 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.4)]' : 
+                     item.type === 'alert' ? 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.4)]' :
                      item.type === 'warning' ? 'bg-amber-500' :
                      item.type === 'success' ? 'bg-emerald-500' : 'bg-slate-300'
                    }`} />

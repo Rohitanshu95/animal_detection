@@ -517,6 +517,8 @@ async def search_incidents(search_query: SearchQuery):
 async def get_statistics(
     location: Optional[str] = None,
     species: Optional[str] = None,
+    division: Optional[str] = None,
+    year: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None
 ):
@@ -525,6 +527,8 @@ async def get_statistics(
 
     - **location**: Filter by location (partial match)
     - **species**: Filter by species (partial match)
+    - **division**: Filter by division (partial match)
+    - **year**: Filter by year (YYYY format)
     - **date_from**: Filter incidents from this date (YYYY-MM-DD)
     - **date_to**: Filter incidents to this date (YYYY-MM-DD)
     """
@@ -537,6 +541,9 @@ async def get_statistics(
     if location:
         conditions.append({"location": {"$regex": location, "$options": "i"}})
 
+    if division:
+        conditions.append({"location": {"$regex": division, "$options": "i"}})
+
     if species:
         conditions.append({
             "$or": [
@@ -544,6 +551,12 @@ async def get_statistics(
                 {"extracted_animals": {"$regex": species, "$options": "i"}}
             ]
         })
+
+    if year:
+        # Use proper date range queries for year filtering
+        start_date = f"{year}-01-01"
+        end_date = f"{int(year) + 1}-01-01"
+        conditions.append({"date": {"$gte": start_date, "$lt": end_date}})
 
     if date_from or date_to:
         date_query = {}

@@ -55,7 +55,6 @@ const IncidentFilters = ({ filters, setFilters, stats, onClose }) => {
    // Filter options based on search
    const filteredOptions = (category, options) => {
      const searchTerm = searchTerms[category]?.toLowerCase() || '';
-     if (!searchTerm) return options;
      return Object.entries(options).filter(([key]) =>
        key.toLowerCase().includes(searchTerm)
      );
@@ -94,8 +93,8 @@ const IncidentFilters = ({ filters, setFilters, stats, onClose }) => {
 
       {/* Status Filter */}
       <FilterSection title="Status">
-        {stats?.status && Object.entries(stats.status).map(([status, count]) => (
-          <label key={status} className="flex items-center justify-between cursor-pointer group select-none">
+        {stats?.status && Object.entries(stats.status).map(([status, count], index) => (
+          <label key={index} className="flex items-center justify-between cursor-pointer group select-none">
             <div className="flex items-center gap-2">
               <input
                 type="checkbox"
@@ -119,8 +118,8 @@ const IncidentFilters = ({ filters, setFilters, stats, onClose }) => {
           className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 text-sm text-slate-700 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
         >
           <option value="">All Time</option>
-          {stats?.years && Object.entries(stats.years).map(([year, count]) => (
-            <option key={year} value={year}>{year} ({count})</option>
+          {stats?.years && Object.entries(stats.years).map(([year, count], index) => (
+            <option key={index} value={year}>{year} ({count})</option>
           ))}
         </select>
       </FilterSection>
@@ -142,8 +141,8 @@ const IncidentFilters = ({ filters, setFilters, stats, onClose }) => {
           </div>
         </div>
         <div className="max-h-48 overflow-y-auto">
-          {stats?.species && filteredOptions('species', stats.species).map(([species, count]) => (
-            <label key={species} className="flex items-center justify-between cursor-pointer group select-none py-1">
+          {stats?.species && filteredOptions('species', stats.species).map(([species, count], index) => (
+            <label key={index} className="flex items-center justify-between cursor-pointer group select-none py-1">
               <div className="flex items-center gap-2">
                 <input
                    type="checkbox"
@@ -174,8 +173,8 @@ const IncidentFilters = ({ filters, setFilters, stats, onClose }) => {
           </div>
         </div>
         <div className="max-h-48 overflow-y-auto">
-          {stats?.location && filteredOptions('location', stats.location).map(([location, count]) => (
-            <label key={location} className="flex items-center justify-between cursor-pointer group select-none py-1">
+          {stats?.location && filteredOptions('location', stats.location).map(([location, count], index) => (
+            <label key={index} className="flex items-center justify-between cursor-pointer group select-none py-1">
               <div className="flex items-center gap-2">
                 <input
                    type="checkbox"
@@ -206,8 +205,8 @@ const IncidentFilters = ({ filters, setFilters, stats, onClose }) => {
           </div>
         </div>
         <div className="max-h-48 overflow-y-auto">
-          {stats?.tags && filteredOptions('tags', stats.tags).map(([tag, count]) => (
-            <label key={tag} className="flex items-center justify-between cursor-pointer group select-none py-1">
+          {stats?.tags && filteredOptions('tags', stats.tags).map(([tag, count], index) => (
+            <label key={`${tag}-${index}`} className="flex items-center justify-between cursor-pointer group select-none py-1">
               <div className="flex items-center gap-2">
                 <input
                    type="checkbox"

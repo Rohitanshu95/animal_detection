@@ -4,6 +4,7 @@ import axios from 'axios';
 import IncidentFilters from '../components/incidents/IncidentFilters';
 import IncidentCard from '../components/incidents/IncidentCard';
 import IncidentFormModal from '../components/incidents/IncidentFormModal';
+import ErrorBoundary from '../components/common/ErrorBoundary';
 import { Plus, Search, Loader, X, MapPin, Calendar, Bot, Trash2, ArrowUp, ArrowDown, Filter, ChevronLeft } from 'lucide-react';
 
 // Mock data
@@ -80,11 +81,16 @@ const Incidents = () => {
 
 
       const response = await axios.get(`/api/incidents?${params.toString()}`);
-      
+
       if (overridePage === 1) {
         setIncidents(response.data);
       } else {
-        setIncidents(prev => [...prev, ...response.data]);
+        setIncidents(prev => {
+          const newIncidents = response.data.filter(newIncident =>
+            !prev.some(existing => existing._id === newIncident._id)
+          );
+          return [...prev, ...newIncidents];
+        });
       }
       setHasMore(response.data.length === LIMIT);
       
@@ -132,7 +138,9 @@ const Incidents = () => {
                  >
                      <ChevronLeft className="w-4 h-4" />
                  </button>
-                 <IncidentFilters filters={filters} setFilters={setFilters} stats={stats} />
+                 <ErrorBoundary>
+                   <IncidentFilters filters={filters} setFilters={setFilters} stats={stats} />
+                 </ErrorBoundary>
              </div>
         )}
       </div>
